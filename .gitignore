@@ -1,0 +1,88 @@
+# Patient Data Protection - CRITICAL: Never commit patient data
+patient-confidential/
+**/patient-confidential/
+*patient*confidential*
+*confidential*
+
+# Patient data files that might appear elsewhere
+*patient*.csv
+*Patient*.csv
+*PATIENT*.csv
+patient_*.csv
+Patient_*.csv
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+
+# Medical imaging data files (potential patient data)
+*.dcm
+*.DCM
+*.his
+*.HIS
+
+# Large data directories
+data/
+Data/
+DATA/
+XVI_COLLECTION/
+*XVI*COLLECTION*
+
+# Output files that might contain patient data
+output/
+Output/
+results/
+Results/
+exports/
+Exports/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini

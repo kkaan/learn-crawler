@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"\\\\GC04PRBAK02\\elekta_fdt\\XVI_COLLECTION\\processed\\20230403_Flinders\")",
+      "Bash(dir \"E:\\XVI_COLLECTION\\processed\\20230403_Flinders\\patient_15002197\\DICOM_PLAN\")",
+      "Bash(dir \"E:\\XVI_COLLECTION\\processed\\20230403_Flinders\\patient_19001415\\DICOM_PLAN\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
