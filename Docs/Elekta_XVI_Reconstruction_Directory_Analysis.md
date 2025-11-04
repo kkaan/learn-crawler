@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Reconstruction directory is a key component of the Elekta XVI CBCT (Cone Beam Computed Tomography) imaging system export. This directory contains the reconstructed volumetric data and associated configuration files generated from the projection images (`.his` files) acquired during CBCT scanning on the VersaHD linear accelerator.
+The Reconstruction directory comes from the Elekta XVI CBCT (Cone Beam Computed Tomography) imaging system export. This directory contains the reconstructed volumetric data and associated configuration files generated from the projection images (`.his` files) acquired during CBCT scanning on the VersaHD linear accelerator.
+
+Export procedure to get this is in
 
 The XVI system performs cone beam CT imaging for patient positioning verification and adaptive radiotherapy workflows. The Reconstruction directory stores the final 3D volumes along with all the technical parameters used during the reconstruction process.
 
@@ -162,22 +164,6 @@ The MACHINEORIENTATION files provide the transformations between these coordinat
 - **Quality Assurance**: Configuration files provide audit trail
 - **Archive Storage**: Complete parameter set enables reprocessing
 
-## Clinical Applications
-
-### Image-Guided Radiotherapy (IGRT)
-- Pre-treatment patient positioning verification
-- Real-time anatomy visualization
-- Soft tissue and bony landmark identification
-
-### Adaptive Radiotherapy
-- Monitoring anatomical changes during treatment course
-- Re-planning trigger identification
-- Dose accumulation studies
-
-### Quality Assurance
-- Phantom imaging for system commissioning
-- Regular QA measurements and trending
-- Reproducibility validation
 
 ## File Size and Storage Considerations
 
@@ -188,13 +174,3 @@ The MACHINEORIENTATION files provide the transformations between these coordinat
 
 Total storage per CBCT scan: Approximately 25-60 MB including all reconstruction files.
 
-## Summary
-
-The Reconstruction directory provides a complete technical record of each CBCT acquisition, from raw projection processing to final 3D volume generation. This comprehensive dataset enables:
-
-- **Reproducible Analysis**: All parameters preserved for reprocessing
-- **Clinical Integration**: DICOM compatibility and coordinate system registration
-- **Quality Assurance**: Complete audit trail of imaging parameters
-- **Research Applications**: Access to both processed volumes and reconstruction metadata
-
-The combination of human-readable configuration files and standardized binary formats makes this data suitable for both clinical workflow integration and research applications requiring detailed technical analysis of CBCT imaging procedures.
