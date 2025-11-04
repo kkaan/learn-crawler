@@ -86,3 +86,7 @@ Exports/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Claude Code configuration
+CLAUDE.md
+.claude/
