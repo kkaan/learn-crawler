@@ -23,7 +23,7 @@ patient_XXXXXXXX/
 │           ├── [UID].INI                 # XVI software configuration
 │           ├── [UID].INI.XVI             # Reconstruction parameters
 │           ├── [UID].[timestamp].INI     # Session-specific configuration
-│           ├── [UID].[timestamp].INI.XVI # Session-specific reconstruction params
+│           ├── [UID].[timestamp].INI.XVI # Session-specific registratoin details
 │           ├── [UID].[timestamp].SCAN    # Reconstructed volume data
 │           ├── [UID].[timestamp].SCAN.MACHINEORIENTATION # Coordinate transformation
 │           └── [UID].RPS.dcm             # DICOM registration data (optional)
