@@ -150,7 +150,7 @@ correction_matrix = extractor.get_correction_matrix(0)
 
 ## Example Output from Your File
 
-**Patient**: PHILLIPS, Valerie (DOB: 24.03.1940)  
+**Patient**: Anonymised, DOB (01-01-1999))
 **Treatment**: LtLungSBRT  
 **Alignment Date**: 2023-10-10 16:17:49  
 **Protocol**: Clipbox → Mask
