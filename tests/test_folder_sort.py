@@ -5,6 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import pydicom
+from pydicom.dataset import FileDataset
+from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import pytest
 
 from learn_upload.folder_sort import (
@@ -93,6 +96,82 @@ def _make_xvi_session(
         (recon_dir / "volume.SCAN.MACHINEORIENTATION").write_bytes(b"\x00" * 50)
 
     return patient_dir
+
+
+def _make_modality_dcm(directory: Path, filename: str, modality: str) -> Path:
+    """Create a minimal DICOM file with a specific Modality tag."""
+    directory.mkdir(parents=True, exist_ok=True)
+    filepath = directory / filename
+
+    file_meta = pydicom.Dataset()
+    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.2"
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+    ds = FileDataset(str(filepath), {}, file_meta=file_meta, preamble=b"\x00" * 128)
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.Modality = modality
+    ds.PatientName = "Test^Patient"
+    ds.PatientID = "12345"
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+
+    ds.save_as(filepath)
+    return filepath
+
+
+# ---------------------------------------------------------------------------
+# classify_dicom_files
+# ---------------------------------------------------------------------------
+
+class TestClassifyDicomFiles:
+    def test_classifies_by_modality(self, tmp_path):
+        """CT, RTPLAN, RTSTRUCT, RTDOSE correctly classified."""
+        source = tmp_path / "tps_export"
+        _make_modality_dcm(source / "CT_SET", "slice1.dcm", "CT")
+        _make_modality_dcm(source / "CT_SET", "slice2.dcm", "CT")
+        _make_modality_dcm(source / "DICOM_PLAN", "plan.dcm", "RTPLAN")
+        _make_modality_dcm(source / "Structures", "struct.dcm", "RTSTRUCT")
+        _make_modality_dcm(source / "Dose", "dose.dcm", "RTDOSE")
+
+        result = LearnFolderMapper.classify_dicom_files(source)
+
+        assert len(result["ct"]) == 2
+        assert len(result["plan"]) == 1
+        assert len(result["structures"]) == 1
+        assert len(result["dose"]) == 1
+
+    def test_unknown_modality_excluded(self, tmp_path):
+        """Unrecognised modality logged, not in results."""
+        source = tmp_path / "tps_export"
+        _make_modality_dcm(source, "mystery.dcm", "MR")
+        _make_modality_dcm(source, "ct.dcm", "CT")
+
+        result = LearnFolderMapper.classify_dicom_files(source)
+
+        assert len(result["ct"]) == 1
+        # MR should not appear in any category
+        all_files = result["ct"] + result["plan"] + result["structures"] + result["dose"]
+        assert len(all_files) == 1
+
+    def test_empty_dir(self, tmp_path):
+        source = tmp_path / "empty"
+        source.mkdir()
+        result = LearnFolderMapper.classify_dicom_files(source)
+        assert all(len(v) == 0 for v in result.values())
+
+    def test_nonexistent_dir(self, tmp_path):
+        result = LearnFolderMapper.classify_dicom_files(tmp_path / "nope")
+        assert all(len(v) == 0 for v in result.values())
+
+    def test_recursive_discovery(self, tmp_path):
+        """Files in deeply nested directories are found."""
+        source = tmp_path / "export"
+        _make_modality_dcm(source / "a" / "b" / "c", "deep.dcm", "RTDOSE")
+
+        result = LearnFolderMapper.classify_dicom_files(source)
+        assert len(result["dose"]) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -401,10 +480,63 @@ class TestCopyAnonymisedPlans:
 
         assert counts["ct_count"] == 3
         assert counts["plan_count"] == 1
+        assert counts["structures_count"] == 0
+        assert counts["dose_count"] == 0
 
         # Verify destination
         assert (out / "Prostate" / "Patient Plans" / "PAT01" / "CT" / "ct_0.dcm").exists()
         assert (out / "Prostate" / "Patient Plans" / "PAT01" / "Plan" / "plan.dcm").exists()
+
+    def test_copy_all_four_categories(self, tmp_path):
+        ct_dir = tmp_path / "anon" / "ct"
+        ct_dir.mkdir(parents=True)
+        (ct_dir / "ct.dcm").write_bytes(b"\x00" * 50)
+
+        plan_dir = tmp_path / "anon" / "plan"
+        plan_dir.mkdir(parents=True)
+        (plan_dir / "plan.dcm").write_bytes(b"\x00" * 50)
+
+        struct_dir = tmp_path / "anon" / "struct"
+        struct_dir.mkdir(parents=True)
+        (struct_dir / "struct.dcm").write_bytes(b"\x00" * 50)
+
+        dose_dir = tmp_path / "anon" / "dose"
+        dose_dir.mkdir(parents=True)
+        (dose_dir / "dose.dcm").write_bytes(b"\x00" * 50)
+        (dose_dir / "dose2.dcm").write_bytes(b"\x00" * 50)
+
+        out = tmp_path / "out"
+        mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", out)
+        counts = mapper.copy_anonymised_plans(
+            ct_dir, plan_dir, struct_dir, dose_dir
+        )
+
+        assert counts == {
+            "ct_count": 1,
+            "plan_count": 1,
+            "structures_count": 1,
+            "dose_count": 2,
+        }
+
+        plans_root = out / "Prostate" / "Patient Plans" / "PAT01"
+        assert (plans_root / "CT" / "ct.dcm").exists()
+        assert (plans_root / "Plan" / "plan.dcm").exists()
+        assert (plans_root / "Structure Set" / "struct.dcm").exists()
+        assert (plans_root / "Dose" / "dose.dcm").exists()
+        assert (plans_root / "Dose" / "dose2.dcm").exists()
+
+    def test_none_dirs_skipped(self, tmp_path):
+        """Passing None for all dirs returns all-zero counts."""
+        out = tmp_path / "out"
+        mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", out)
+        counts = mapper.copy_anonymised_plans()
+
+        assert counts == {
+            "ct_count": 0,
+            "plan_count": 0,
+            "structures_count": 0,
+            "dose_count": 0,
+        }
 
 
 # ---------------------------------------------------------------------------

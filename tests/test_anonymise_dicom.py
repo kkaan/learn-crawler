@@ -82,7 +82,7 @@ class TestAnonymiseFile:
         out = anon.anonymise_file(dcm_path)
 
         ds = pydicom.dcmread(out)
-        assert str(ds.PatientName) == "PAT01"
+        assert str(ds.PatientName) == "PAT01^"
         assert ds.PatientID == "PAT01"
         assert ds.StudyID == "PAT01"
 
@@ -152,7 +152,7 @@ class TestAnonymiseFile:
         out = anon.anonymise_file(dcm_path)
 
         result = pydicom.dcmread(out)
-        assert str(result.PatientName) == "PAT01"
+        assert str(result.PatientName) == "PAT01^"
         # InstitutionName should still be absent (not created)
         assert (0x0008, 0x0080) not in result
 
@@ -212,6 +212,120 @@ class TestAnonymiseAll:
 # ---------------------------------------------------------------------------
 # Tests: edge cases
 # ---------------------------------------------------------------------------
+
+class TestPatientNameFormat:
+    def test_patient_name_with_site(self, tmp_path):
+        """PatientName set to AnonID^SiteName when site_name provided."""
+        patient_dir = tmp_path / "patient_00000001"
+        dcm_path = _make_test_dicom(patient_dir / "CT_SET", "slice.DCM")
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir, site_name="Prostate")
+        out = anon.anonymise_file(dcm_path)
+
+        ds = pydicom.dcmread(out)
+        assert str(ds.PatientName) == "PAT01^Prostate"
+
+    def test_patient_name_without_site(self, tmp_path):
+        """PatientName set to AnonID^ when site_name is empty."""
+        patient_dir = tmp_path / "patient_00000001"
+        dcm_path = _make_test_dicom(patient_dir / "CT_SET", "slice.DCM")
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir)
+        out = anon.anonymise_file(dcm_path)
+
+        ds = pydicom.dcmread(out)
+        assert str(ds.PatientName) == "PAT01^"
+
+
+class TestAnonymiseAllDcm:
+    def test_recursive_discovery(self, tmp_path):
+        """anonymise_all_dcm finds .dcm files in nested directories."""
+        patient_dir = tmp_path / "patient_00000001"
+        patient_dir.mkdir()
+        source = tmp_path / "tps_export"
+        # Create files in various nested dirs
+        _make_test_dicom(source / "CT_SET", "slice1.DCM")
+        _make_test_dicom(source / "DICOM_PLAN", "plan.dcm")
+        _make_test_dicom(source / "deep" / "nested", "struct.dcm")
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir, site_name="Brain")
+        results = anon.anonymise_all_dcm(source)
+
+        assert len(results) == 3
+        for p in results:
+            ds = pydicom.dcmread(p)
+            assert str(ds.PatientName) == "PAT01^Brain"
+            assert ds.PatientID == "PAT01"
+
+    def test_empty_source_dir(self, tmp_path):
+        patient_dir = tmp_path / "patient_00000001"
+        patient_dir.mkdir()
+        source = tmp_path / "empty_source"
+        source.mkdir()
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir)
+        results = anon.anonymise_all_dcm(source)
+        assert results == []
+
+    def test_nonexistent_source_dir(self, tmp_path):
+        patient_dir = tmp_path / "patient_00000001"
+        patient_dir.mkdir()
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", tmp_path / "output")
+        results = anon.anonymise_all_dcm(tmp_path / "does_not_exist")
+        assert results == []
+
+
+class TestFilenameAnonymised:
+    def test_parenthesised_name_replaced(self, tmp_path):
+        """Parenthesised patient name in filename replaced with anon_id."""
+        patient_dir = tmp_path / "patient_00000001"
+        dcm_path = _make_test_dicom(
+            patient_dir / "DICOM_PLAN",
+            "DCMRT_Plan(SMITH JOHN).dcm",
+            patient_name="SMITH JOHN",
+        )
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir)
+        out = anon.anonymise_file(dcm_path)
+
+        assert out.name == "DCMRT_Plan(PAT01).dcm"
+        assert "SMITH" not in out.name
+
+    def test_no_parens_unchanged(self, tmp_path):
+        """Filenames without parentheses are unchanged."""
+        patient_dir = tmp_path / "patient_00000001"
+        dcm_path = _make_test_dicom(patient_dir / "CT_SET", "slice001.DCM")
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir)
+        out = anon.anonymise_file(dcm_path)
+
+        assert out.name == "slice001.DCM"
+
+
+class TestAnonymiseFileCustomSourceBase:
+    def test_relative_path_from_custom_base(self, tmp_path):
+        """source_base parameter controls relative path computation."""
+        patient_dir = tmp_path / "patient_00000001"
+        patient_dir.mkdir()
+        # Source is outside the patient dir
+        tps_root = tmp_path / "tps_export"
+        dcm_path = _make_test_dicom(tps_root / "sub" / "CT", "slice.DCM")
+        output_dir = tmp_path / "output"
+
+        anon = DicomAnonymiser(patient_dir, "PAT01", output_dir)
+        out = anon.anonymise_file(dcm_path, source_base=tps_root)
+
+        # Output should mirror the relative path from tps_root
+        assert out == output_dir / "sub" / "CT" / "slice.DCM"
+        assert out.exists()
+
 
 class TestEdgeCases:
     def test_missing_ct_set_dir(self, tmp_path):

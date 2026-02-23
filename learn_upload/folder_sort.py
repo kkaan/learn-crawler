@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import pydicom
+
 from learn_upload.utils import (
     extract_ini_from_rps,
     parse_couch_shifts,
@@ -86,11 +88,73 @@ class LearnFolderMapper:
         anon_id: str,
         site_name: str,
         output_base: Path,
+        images_subdir: str = "IMAGES",
     ) -> None:
         self.patient_dir = Path(patient_dir)
         self.anon_id = anon_id
         self.site_name = site_name
         self.output_base = Path(output_base)
+        self.images_subdir = images_subdir
+
+    # ----- DICOM classification -----
+
+    _MODALITY_MAP = {
+        "CT": "ct",
+        "RTPLAN": "plan",
+        "RTSTRUCT": "structures",
+        "RTDOSE": "dose",
+    }
+
+    @staticmethod
+    def classify_dicom_files(source_dir: Path) -> dict[str, list[Path]]:
+        """Classify ``.dcm`` files by DICOM Modality tag ``(0008,0060)``.
+
+        Recursively walks *source_dir* and reads only the Modality tag from
+        each ``.dcm`` file to sort them into categories.
+
+        Returns ``{"ct": [...], "plan": [...], "structures": [...], "dose": [...]}``.
+        Files with unrecognised modality are logged as warnings and excluded.
+        """
+        source_dir = Path(source_dir)
+        result: dict[str, list[Path]] = {
+            "ct": [], "plan": [], "structures": [], "dose": [],
+        }
+
+        if not source_dir.is_dir():
+            logger.warning("classify_dicom_files: directory not found: %s", source_dir)
+            return result
+
+        all_dcm = sorted(source_dir.rglob("*.dcm"), key=str) + sorted(
+            source_dir.rglob("*.DCM"), key=str
+        )
+        # Deduplicate (case-insensitive filesystems)
+        seen: set[Path] = set()
+        unique: list[Path] = []
+        for f in all_dcm:
+            resolved = f.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique.append(f)
+
+        for dcm_path in unique:
+            try:
+                ds = pydicom.dcmread(dcm_path, stop_before_pixels=True)
+                modality = getattr(ds, "Modality", None) or ""
+            except Exception:
+                logger.warning("Could not read DICOM file: %s", dcm_path)
+                continue
+
+            category = LearnFolderMapper._MODALITY_MAP.get(modality.upper())
+            if category:
+                result[category].append(dcm_path)
+            else:
+                logger.warning(
+                    "Unrecognised DICOM modality '%s' in %s — skipping",
+                    modality,
+                    dcm_path,
+                )
+
+        return result
 
     # ----- Discovery -----
 
@@ -102,7 +166,7 @@ class LearnFolderMapper:
         list[CBCTSession]
             Sessions sorted by scan_datetime (None-datetime sessions at end).
         """
-        images_dir = self.patient_dir / "IMAGES"
+        images_dir = self.patient_dir / self.images_subdir
         if not images_dir.is_dir():
             logger.warning("No IMAGES directory in %s", self.patient_dir)
             return []
@@ -351,31 +415,44 @@ class LearnFolderMapper:
         return count
 
     def copy_anonymised_plans(
-        self, anon_ct_dir: Path, anon_plan_dir: Path
+        self,
+        anon_ct_dir: Path = None,
+        anon_plan_dir: Path = None,
+        anon_struct_dir: Path = None,
+        anon_dose_dir: Path = None,
     ) -> dict:
-        """Copy anonymised CT and plan DICOM files to the LEARN structure.
+        """Copy anonymised DICOM files to the LEARN structure.
 
-        Returns ``{"ct_count": N, "plan_count": M}``.
+        Returns ``{"ct_count": N, "plan_count": M, "structures_count": P, "dose_count": Q}``.
         """
         site_root = self.output_base / self.site_name
         plans_root = site_root / "Patient Plans" / self.anon_id
-        counts = {"ct_count": 0, "plan_count": 0}
+        counts = {
+            "ct_count": 0,
+            "plan_count": 0,
+            "structures_count": 0,
+            "dose_count": 0,
+        }
 
-        ct_dest = plans_root / "CT"
-        ct_dest.mkdir(parents=True, exist_ok=True)
-        if anon_ct_dir.is_dir():
-            for f in sorted(anon_ct_dir.iterdir()):
-                if f.is_file():
-                    shutil.copy2(f, ct_dest / f.name)
-                    counts["ct_count"] += 1
+        mapping = [
+            (anon_ct_dir, "CT", "ct_count"),
+            (anon_plan_dir, "Plan", "plan_count"),
+            (anon_struct_dir, "Structure Set", "structures_count"),
+            (anon_dose_dir, "Dose", "dose_count"),
+        ]
 
-        plan_dest = plans_root / "Plan"
-        plan_dest.mkdir(parents=True, exist_ok=True)
-        if anon_plan_dir.is_dir():
-            for f in sorted(anon_plan_dir.iterdir()):
+        for src_dir, dest_name, count_key in mapping:
+            if src_dir is None:
+                continue
+            src_dir = Path(src_dir)
+            if not src_dir.is_dir():
+                continue
+            dest = plans_root / dest_name
+            dest.mkdir(parents=True, exist_ok=True)
+            for f in sorted(src_dir.rglob("*")):
                 if f.is_file():
-                    shutil.copy2(f, plan_dest / f.name)
-                    counts["plan_count"] += 1
+                    shutil.copy2(f, dest / f.name)
+                    counts[count_key] += 1
 
         return counts
 
@@ -385,6 +462,8 @@ class LearnFolderMapper:
         self,
         anon_ct_dir: Path = None,
         anon_plan_dir: Path = None,
+        anon_struct_dir: Path = None,
+        anon_dose_dir: Path = None,
         dry_run: bool = False,
     ) -> dict:
         """Run the full folder mapping pipeline.
@@ -395,6 +474,10 @@ class LearnFolderMapper:
             Directory containing anonymised CT DICOM files.
         anon_plan_dir : Path, optional
             Directory containing anonymised plan DICOM files.
+        anon_struct_dir : Path, optional
+            Directory containing anonymised structure set DICOM files.
+        anon_dose_dir : Path, optional
+            Directory containing anonymised dose DICOM files.
         dry_run : bool
             If True, create directories but skip file copies.
 
@@ -456,10 +539,15 @@ class LearnFolderMapper:
                 summary["files_copied"]["motionview"] += mv_count
 
         # 6. Copy anonymised plans
-        if anon_ct_dir and anon_plan_dir and not dry_run:
-            plan_counts = self.copy_anonymised_plans(anon_ct_dir, anon_plan_dir)
+        has_anon = any([anon_ct_dir, anon_plan_dir, anon_struct_dir, anon_dose_dir])
+        if has_anon and not dry_run:
+            plan_counts = self.copy_anonymised_plans(
+                anon_ct_dir, anon_plan_dir, anon_struct_dir, anon_dose_dir
+            )
             summary["files_copied"]["ct"] = plan_counts["ct_count"]
             summary["files_copied"]["plan"] = plan_counts["plan_count"]
+            summary["files_copied"]["structures"] = plan_counts["structures_count"]
+            summary["files_copied"]["dose"] = plan_counts["dose_count"]
 
         logger.info("Execute complete: %s", summary)
         return summary
