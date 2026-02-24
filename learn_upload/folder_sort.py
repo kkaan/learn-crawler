@@ -160,7 +160,7 @@ class LearnFolderMapper:
 
     # ----- Discovery -----
 
-    def discover_sessions(self) -> list[CBCTSession]:
+    def discover_sessions(self, enrich: bool = True) -> list[CBCTSession]:
         """Scan IMAGES/img_* directories and build session objects.
 
         Returns
@@ -202,7 +202,7 @@ class LearnFolderMapper:
             )
 
             # For CBCT/KIM Learning: extract datetime and registration data
-            if session_type in ("cbct", "kim_learning"):
+            if session_type in ("cbct", "kim_learning") and enrich:
                 self._enrich_cbct_session(session)
 
             sessions.append(session)

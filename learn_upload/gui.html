@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEARN Pipeline</title>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary:   #0a0e14;
+  --bg-secondary: #11151c;
+  --bg-card:      #161b24;
+  --bg-input:     #1a2030;
+  --border:       #2a3040;
+  --border-focus: #2ec4b6;
+  --text-primary: #e0e6ef;
+  --text-secondary:#8892a4;
+  --text-muted:   #5c6578;
+  --accent:       #2ec4b6;
+  --accent-dim:   #1a7a72;
+  --success:      #4ade80;
+  --warning:      #f59e0b;
+  --error:        #ef4444;
+  --info:         #60a5fa;
+  --font-ui:      'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:    'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  --radius:       6px;
+  --transition:   0.2s ease;
+}
+
+html, body {
+  height: 100%; width: 100%;
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* ===== Layout ===== */
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+/* ===== Sidebar Stepper ===== */
+.sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.sidebar-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+  padding: 0 20px 20px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.step-list {
+  list-style: none;
+  flex: 1;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  cursor: default;
+  color: var(--text-muted);
+  position: relative;
+  transition: color var(--transition), background var(--transition);
+}
+
+.step-item.active {
+  color: var(--text-primary);
+  background: rgba(46, 196, 182, 0.06);
+}
+
+.step-item.completed {
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.step-item.completed:hover {
+  background: rgba(46, 196, 182, 0.04);
+}
+
+.step-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.step-number {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+.step-item.active .step-number {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.step-item.completed .step-number {
+  border-color: var(--success);
+  background: var(--success);
+  color: var(--bg-primary);
+}
+
+.step-item.completed .step-number::after {
+  content: '\2713';
+  font-size: 14px;
+}
+
+.step-item.completed .step-num-text { display: none; }
+
+.step-label { font-size: 13px; font-weight: 500; }
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== Main Content ===== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+}
+
+.main-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.main-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* ===== Step Panels ===== */
+.step-panel { display: none; }
+.step-panel.active { display: block; }
+
+/* ===== Cards ===== */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 16px;
+}
+
+/* ===== Form ===== */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.input-with-btn {
+  display: flex;
+  gap: 6px;
+}
+
+.input-with-btn input {
+  flex: 1;
+}
+
+.btn-browse {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all var(--transition);
+}
+
+.btn-browse:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ===== Checkbox ===== */
+.checkbox-group {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 16px; height: 16px;
+  accent-color: var(--accent);
+}
+
+/* ===== Chips (PII strings) ===== */
+.chip-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 34px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  cursor: text;
+}
+
+.chip-container:focus-within {
+  border-color: var(--border-focus);
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-dim);
+  color: var(--text-primary);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.chip-remove {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.chip-remove:hover { opacity: 1; }
+
+.chip-input {
+  border: none !important;
+  background: transparent !important;
+  padding: 2px 4px !important;
+  min-width: 80px;
+  flex: 1;
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.btn-primary:hover { background: #26a99d; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+/* ===== Stat Cards ===== */
+.stat-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+/* ===== Data Table ===== */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+thead {
+  background: var(--bg-secondary);
+  position: sticky;
+  top: 0;
+}
+
+th {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+tbody tr:hover {
+  background: rgba(46, 196, 182, 0.03);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-cbct       { background: rgba(96, 165, 250, 0.15); color: var(--info); }
+.badge-kim        { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+.badge-motionview { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+
+/* ===== Progress Bar ===== */
+.progress-wrap {
+  margin-bottom: 16px;
+}
+
+.progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.indeterminate {
+  width: 30%;
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ===== Terminal Log ===== */
+.terminal {
+  background: #050810;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.terminal::-webkit-scrollbar { width: 6px; }
+.terminal::-webkit-scrollbar-track { background: transparent; }
+.terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.log-line { white-space: pre-wrap; word-break: break-all; }
+.log-info    { color: var(--text-secondary); }
+.log-warning { color: var(--warning); }
+.log-error   { color: var(--error); }
+
+/* ===== PII Banner ===== */
+.pii-banner {
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.pii-pass {
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid var(--success);
+  color: var(--success);
+}
+
+.pii-fail {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  color: var(--error);
+}
+
+/* ===== Findings Table ===== */
+.finding-matched {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--error);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+/* ===== Error display ===== */
+.error-box {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  padding: 16px;
+  color: var(--error);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.error-box.visible { display: block; }
+
+/* ===== Spinner ===== */
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Scrollbar ===== */
+.main-body::-webkit-scrollbar { width: 8px; }
+.main-body::-webkit-scrollbar-track { background: transparent; }
+.main-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ===== Sidebar ===== -->
+  <nav class="sidebar">
+    <div class="sidebar-title">LEARN Pipeline</div>
+    <ol class="step-list">
+      <li class="step-item active" data-step="1" onclick="goToStep(1)">
+        <span class="step-number"><span class="step-num-text">1</span></span>
+        <span class="step-label">Configuration</span>
+      </li>
+      <li class="step-item" data-step="2" onclick="goToStep(2)">
+        <span class="step-number"><span class="step-num-text">2</span></span>
+        <span class="step-label">Data Preview</span>
+      </li>
+      <li class="step-item" data-step="3" onclick="goToStep(3)">
+        <span class="step-number"><span class="step-num-text">3</span></span>
+        <span class="step-label">Anonymise</span>
+      </li>
+      <li class="step-item" data-step="4" onclick="goToStep(4)">
+        <span class="step-number"><span class="step-num-text">4</span></span>
+        <span class="step-label">Folder Sort</span>
+      </li>
+      <li class="step-item" data-step="5" onclick="goToStep(5)">
+        <span class="step-number"><span class="step-num-text">5</span></span>
+        <span class="step-label">PII Verification</span>
+      </li>
+    </ol>
+    <div class="sidebar-footer">learn_upload v0.1.0</div>
+  </nav>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <header class="main-header">
+      <h2 id="step-title">Configuration</h2>
+      <div id="header-actions"></div>
+    </header>
+
+    <div class="main-body">
+
+      <!-- ============================== Step 1: Configuration ============================== -->
+      <div class="step-panel active" id="panel-1">
+        <div class="card">
+          <div class="card-title">Patient Identity</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="anon-id">Anonymised ID</label>
+              <input id="anon-id" type="text" placeholder="PAT01" value="PAT01">
+            </div>
+            <div class="form-group">
+              <label for="site-name">Site Name</label>
+              <input id="site-name" type="text" placeholder="e.g. Prostate">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Data Paths</div>
+          <div class="form-grid">
+            <div class="form-group full-width">
+              <label for="source-path">Source Path (XVI patient root)</label>
+              <div class="input-with-btn">
+                <input id="source-path" type="text" placeholder="P:\04_Projects\...">
+                <button class="btn-browse" onclick="browsePath('source-path')">Browse</button>
+              </div>
+            </div>
+            <div class="form-group full-width">
+              <label for="tps-path">TPS Export Path</label>
+              <div class="input-with-btn">
+                <input id="tps-path" type="text" placeholder="(optional) Path to TPS Export folder">
+                <button class="btn-browse" onclick="browsePath('tps-path')">Browse</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="output-path">Output Path</label>
+              <div class="input-with-btn">
+                <input id="output-path" type="text" placeholder="E:\LEARN_OUTPUT">
+                <button class="btn-browse" onclick="browsePath('output-path')">Browse</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="staging-path">Staging Path</label>
+              <div class="input-with-btn">
+                <input id="staging-path" type="text" placeholder="(auto: output/_staging)">
+                <button class="btn-browse" onclick="browsePath('staging-path')">Browse</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="images-subdir">Images Subdirectory</label>
+              <input id="images-subdir" type="text" placeholder="IMAGES" value="XVI Export">
+            </div>
+            <div class="form-group">
+              <label for="centroid-path">Centroid File</label>
+              <div class="input-with-btn">
+                <input id="centroid-path" type="text" placeholder="(optional)">
+                <button class="btn-browse" onclick="browseFile('centroid-path')">Browse</button>
+              </div>
+            </div>
+            <div class="form-group full-width">
+              <label for="trajectory-dir">Trajectory Logs Directory</label>
+              <div class="input-with-btn">
+                <input id="trajectory-dir" type="text" placeholder="(optional)">
+                <button class="btn-browse" onclick="browsePath('trajectory-dir')">Browse</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">PII Search Strings</div>
+          <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+            Enter patient identifiers to scan for after anonymisation. Press Enter or comma to add.
+          </p>
+          <div class="chip-container" id="pii-chips" onclick="document.getElementById('pii-input').focus()">
+            <input class="chip-input" id="pii-input" placeholder="Type and press Enter..."
+                   onkeydown="handleChipKey(event)">
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Options</div>
+          <div class="form-group checkbox-group">
+            <input type="checkbox" id="dry-run">
+            <label for="dry-run">Dry run (preview only, no files copied)</label>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; padding-top: 8px;">
+          <button class="btn btn-primary" onclick="submitConfig()">Continue to Preview</button>
+        </div>
+      </div>
+
+      <!-- ============================== Step 2: Data Preview ============================== -->
+      <div class="step-panel" id="panel-2">
+        <div id="discovery-loading" style="text-align: center; padding: 40px;">
+          <div class="spinner" style="width: 32px; height: 32px; border-width: 3px;"></div>
+          <p style="margin-top: 12px; color: var(--text-secondary);">Discovering sessions...</p>
+        </div>
+
+        <div id="discovery-results" style="display: none;">
+          <div class="stat-row" id="discovery-stats"></div>
+
+          <div class="card">
+            <div class="card-title">Sessions by Fraction</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fraction</th>
+                    <th>Type</th>
+                    <th>Directory</th>
+                    <th>Datetime</th>
+                    <th>Treatment</th>
+                    <th>kV</th>
+                    <th>mA</th>
+                    <th>RPS</th>
+                  </tr>
+                </thead>
+                <tbody id="session-table-body"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; padding-top: 8px;">
+            <button class="btn btn-secondary" onclick="goToStep(1)">Back</button>
+            <button class="btn btn-primary" onclick="startAnonymise()">Start Anonymisation</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================== Step 3: Anonymise ============================== -->
+      <div class="step-panel" id="panel-3">
+        <div class="error-box" id="anon-error"></div>
+
+        <div class="progress-wrap" id="anon-progress">
+          <div class="progress-label">
+            <span id="anon-progress-text">Preparing...</span>
+            <span id="anon-progress-pct">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="anon-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="stat-row" id="anon-stats" style="display: none;"></div>
+
+        <div class="card">
+          <div class="card-title">Log Output</div>
+          <div class="terminal" id="anon-terminal"></div>
+        </div>
+
+        <div id="anon-actions" style="display: none; padding-top: 8px; justify-content: space-between;">
+          <button class="btn btn-secondary" onclick="goToStep(2)">Back</button>
+          <button class="btn btn-primary" onclick="startFolderSort()">Start Folder Sort</button>
+        </div>
+      </div>
+
+      <!-- ============================== Step 4: Folder Sort ============================== -->
+      <div class="step-panel" id="panel-4">
+        <div class="error-box" id="sort-error"></div>
+
+        <div class="progress-wrap" id="sort-progress">
+          <div class="progress-label">
+            <span id="sort-progress-text">Running folder sort...</span>
+            <span></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill indeterminate" id="sort-progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="stat-row" id="sort-stats" style="display: none;"></div>
+
+        <div class="card">
+          <div class="card-title">Log Output</div>
+          <div class="terminal" id="sort-terminal"></div>
+        </div>
+
+        <div id="sort-actions" style="display: none; padding-top: 8px; justify-content: space-between;">
+          <button class="btn btn-secondary" onclick="goToStep(3)">Back</button>
+          <button class="btn btn-primary" onclick="startPiiCheck()">Run PII Verification</button>
+        </div>
+      </div>
+
+      <!-- ============================== Step 5: PII Verification ============================== -->
+      <div class="step-panel" id="panel-5">
+        <div class="error-box" id="pii-error"></div>
+
+        <div id="pii-loading" style="text-align: center; padding: 40px;">
+          <div class="spinner" style="width: 32px; height: 32px; border-width: 3px;"></div>
+          <p style="margin-top: 12px; color: var(--text-secondary);">Scanning for PII...</p>
+        </div>
+
+        <div id="pii-results" style="display: none;">
+          <div id="pii-banner-wrap"></div>
+          <div class="stat-row" id="pii-stats"></div>
+
+          <div id="pii-findings-section" style="display: none;">
+            <div class="card">
+              <div class="card-title">Findings</div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>File</th>
+                      <th>Location</th>
+                      <th>Matched</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pii-findings-body"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Log Output</div>
+            <div class="terminal" id="pii-terminal"></div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; padding-top: 8px;">
+            <button class="btn btn-secondary" onclick="goToStep(4)">Back</button>
+            <button class="btn btn-primary" onclick="goToStep(1)">New Patient</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- .main-body -->
+  </div><!-- .main -->
+</div><!-- .app -->
+
+<script>
+/* ===================================================================
+   State
+   =================================================================== */
+let currentStep = 1;
+let piiStrings = [];
+const stepTitles = {
+  1: 'Configuration',
+  2: 'Data Preview',
+  3: 'Anonymise',
+  4: 'Folder Sort',
+  5: 'PII Verification',
+};
+
+// Track which steps are completed
+const completedSteps = new Set();
+
+// Track which terminal gets log messages based on current step
+let activeTerminalId = null;
+
+/* ===================================================================
+   Navigation
+   =================================================================== */
+function goToStep(n) {
+  // Only allow going to completed steps or current step
+  if (n > currentStep && !completedSteps.has(n)) return;
+
+  currentStep = n;
+  document.getElementById('step-title').textContent = stepTitles[n];
+
+  // Update sidebar
+  document.querySelectorAll('.step-item').forEach(el => {
+    const s = parseInt(el.dataset.step);
+    el.classList.remove('active');
+    if (s === n) el.classList.add('active');
+    if (completedSteps.has(s)) {
+      el.classList.add('completed');
+    } else {
+      el.classList.remove('completed');
+    }
+  });
+
+  // Update panels
+  document.querySelectorAll('.step-panel').forEach(el => el.classList.remove('active'));
+  document.getElementById('panel-' + n).classList.add('active');
+
+  // Map step to terminal
+  const terminalMap = { 3: 'anon-terminal', 4: 'sort-terminal', 5: 'pii-terminal' };
+  activeTerminalId = terminalMap[n] || null;
+}
+
+/* ===================================================================
+   Chip Input (PII Strings)
+   =================================================================== */
+function handleChipKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.replace(',', '').trim();
+    if (val && !piiStrings.includes(val)) {
+      piiStrings.push(val);
+      renderChips();
+    }
+    e.target.value = '';
+  } else if (e.key === 'Backspace' && e.target.value === '' && piiStrings.length > 0) {
+    piiStrings.pop();
+    renderChips();
+  }
+}
+
+function removeChip(index) {
+  piiStrings.splice(index, 1);
+  renderChips();
+}
+
+function renderChips() {
+  const container = document.getElementById('pii-chips');
+  const input = document.getElementById('pii-input');
+  // Remove old chips
+  container.querySelectorAll('.chip').forEach(c => c.remove());
+  // Add chips before input
+  piiStrings.forEach((str, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `${escHtml(str)} <span class="chip-remove" onclick="removeChip(${i})">&times;</span>`;
+    container.insertBefore(chip, input);
+  });
+}
+
+/* ===================================================================
+   Browse helpers
+   =================================================================== */
+async function browsePath(inputId) {
+  const result = await window.pywebview.api.browse_folder('Select folder');
+  if (result) document.getElementById(inputId).value = result;
+}
+
+async function browseFile(inputId) {
+  const result = await window.pywebview.api.browse_file('Select file');
+  if (result) document.getElementById(inputId).value = result;
+}
+
+/* ===================================================================
+   Step 1 → Submit Config
+   =================================================================== */
+async function submitConfig() {
+  const config = {
+    anon_id: document.getElementById('anon-id').value,
+    site_name: document.getElementById('site-name').value,
+    source_path: document.getElementById('source-path').value,
+    tps_path: document.getElementById('tps-path').value,
+    output_path: document.getElementById('output-path').value,
+    staging_path: document.getElementById('staging-path').value,
+    images_subdir: document.getElementById('images-subdir').value,
+    centroid_path: document.getElementById('centroid-path').value,
+    trajectory_dir: document.getElementById('trajectory-dir').value,
+    pii_strings: piiStrings,
+    dry_run: document.getElementById('dry-run').checked,
+  };
+
+  const result = await window.pywebview.api.save_config(JSON.stringify(config));
+  if (!result.ok) {
+    alert(result.error);
+    return;
+  }
+
+  completedSteps.add(1);
+  goToStep(2);
+
+  // Show loading, hide results
+  document.getElementById('discovery-loading').style.display = '';
+  document.getElementById('discovery-results').style.display = 'none';
+  activeTerminalId = null;
+
+  // Run discovery (synchronous API call — returns result directly)
+  const discovery = await window.pywebview.api.run_discovery();
+  if (discovery && discovery.ok) {
+    onDiscoveryComplete(discovery);
+  } else {
+    alert('Discovery failed: ' + (discovery ? discovery.error : 'unknown error'));
+    document.getElementById('discovery-loading').style.display = 'none';
+  }
+}
+
+/* ===================================================================
+   Step 2 — Discovery complete callback
+   =================================================================== */
+function onDiscoveryComplete(data) {
+  try {
+    console.log('onDiscoveryComplete called', data);
+    document.getElementById('discovery-loading').style.display = 'none';
+    document.getElementById('discovery-results').style.display = '';
+
+    // Stat cards
+    const statsHtml = [
+      statCard(data.session_count, 'Sessions'),
+      statCard(data.fraction_count, 'Fractions'),
+      statCard(data.dcm_count ?? '—', 'DICOM Files'),
+      statCard(data.his_count ?? '—', 'Projection Files'),
+    ].join('');
+    document.getElementById('discovery-stats').innerHTML = statsHtml;
+
+    // Session table
+    const tbody = document.getElementById('session-table-body');
+    tbody.innerHTML = '';
+    for (const [fx, sessions] of Object.entries(data.fractions)) {
+      for (const s of sessions) {
+        const badgeClass = s.session_type === 'cbct' ? 'badge-cbct'
+          : s.session_type === 'kim_learning' ? 'badge-kim'
+          : 'badge-motionview';
+        const dirName = s.img_dir.split(/[/\\]/).pop();
+        const dt = s.scan_datetime ? s.scan_datetime.replace('T', ' ').substring(0, 19) : '-';
+        tbody.innerHTML += `<tr>
+          <td>${escHtml(fx)}</td>
+          <td><span class="badge ${badgeClass}">${escHtml(s.session_type)}</span></td>
+          <td>${escHtml(dirName)}</td>
+          <td>${escHtml(dt)}</td>
+          <td>${escHtml(s.treatment_id || '-')}</td>
+          <td>${s.tube_kv != null ? s.tube_kv : '-'}</td>
+          <td>${s.tube_ma != null ? s.tube_ma : '-'}</td>
+          <td>${s.has_rps ? 'Yes' : '-'}</td>
+        </tr>`;
+      }
+    }
+    console.log('onDiscoveryComplete rendered OK');
+  } catch (err) {
+    console.error('onDiscoveryComplete ERROR:', err);
+    document.getElementById('discovery-loading').innerHTML =
+      '<p style="color: var(--error);">JS Error: ' + err.message + '</p>';
+  }
+}
+
+/* ===================================================================
+   Step 3 — Anonymise
+   =================================================================== */
+async function startAnonymise() {
+  completedSteps.add(2);
+  goToStep(3);
+  activeTerminalId = 'anon-terminal';
+
+  // Reset UI
+  document.getElementById('anon-terminal').innerHTML = '';
+  document.getElementById('anon-stats').style.display = 'none';
+  document.getElementById('anon-actions').style.display = 'none';
+  document.getElementById('anon-error').classList.remove('visible');
+  document.getElementById('anon-progress-fill').style.width = '0%';
+  document.getElementById('anon-progress-fill').classList.remove('indeterminate');
+  document.getElementById('anon-progress-text').textContent = 'Preparing...';
+  document.getElementById('anon-progress-pct').textContent = '0%';
+
+  await window.pywebview.api.run_anonymise();
+}
+
+function onAnonymiseComplete(data) {
+  // Stats
+  const statsEl = document.getElementById('anon-stats');
+  statsEl.style.display = 'flex';
+  statsEl.innerHTML = [
+    statCard(data.ct || 0, 'CT Files'),
+    statCard(data.plan || 0, 'Plan Files'),
+    statCard(data.structures || 0, 'Structure Files'),
+    statCard(data.errors || 0, 'Errors', data.errors > 0 ? 'var(--error)' : null),
+  ].join('');
+
+  // Progress to 100%
+  document.getElementById('anon-progress-fill').style.width = '100%';
+  document.getElementById('anon-progress-text').textContent = data.skipped ? 'Skipped' : 'Complete';
+  document.getElementById('anon-progress-pct').textContent = '100%';
+
+  // Show actions
+  document.getElementById('anon-actions').style.display = 'flex';
+  completedSteps.add(3);
+}
+
+/* ===================================================================
+   Step 4 — Folder Sort
+   =================================================================== */
+async function startFolderSort() {
+  completedSteps.add(3);
+  goToStep(4);
+  activeTerminalId = 'sort-terminal';
+
+  // Reset UI
+  document.getElementById('sort-terminal').innerHTML = '';
+  document.getElementById('sort-stats').style.display = 'none';
+  document.getElementById('sort-actions').style.display = 'none';
+  document.getElementById('sort-error').classList.remove('visible');
+  document.getElementById('sort-progress-fill').classList.add('indeterminate');
+  document.getElementById('sort-progress-text').textContent = 'Running folder sort...';
+
+  await window.pywebview.api.run_folder_sort();
+}
+
+function onFolderSortComplete(data) {
+  // Stop indeterminate animation
+  const fill = document.getElementById('sort-progress-fill');
+  fill.classList.remove('indeterminate');
+  fill.style.width = '100%';
+  document.getElementById('sort-progress-text').textContent = data.dry_run ? 'Dry run complete' : 'Complete';
+
+  // Stats
+  const statsEl = document.getElementById('sort-stats');
+  statsEl.style.display = 'flex';
+  const fc = data.files_copied || {};
+  statsEl.innerHTML = [
+    statCard(data.sessions || 0, 'Sessions'),
+    statCard(data.fractions || 0, 'Fractions'),
+    statCard(fc.his || 0, '.his Files'),
+    statCard(fc.scan || 0, 'SCAN Files'),
+    statCard(fc.rps || 0, 'RPS Files'),
+  ].join('');
+
+  // Show actions
+  document.getElementById('sort-actions').style.display = 'flex';
+  completedSteps.add(4);
+}
+
+/* ===================================================================
+   Step 5 — PII Verification
+   =================================================================== */
+async function startPiiCheck() {
+  completedSteps.add(4);
+  goToStep(5);
+  activeTerminalId = 'pii-terminal';
+
+  // Reset UI
+  document.getElementById('pii-terminal').innerHTML = '';
+  document.getElementById('pii-loading').style.display = '';
+  document.getElementById('pii-results').style.display = 'none';
+  document.getElementById('pii-error').classList.remove('visible');
+
+  await window.pywebview.api.run_pii_check();
+}
+
+function onPiiCheckComplete(data) {
+  document.getElementById('pii-loading').style.display = 'none';
+  document.getElementById('pii-results').style.display = '';
+
+  // Banner
+  const bannerWrap = document.getElementById('pii-banner-wrap');
+  if (data.passed) {
+    bannerWrap.innerHTML = '<div class="pii-banner pii-pass">PASS — No residual PII detected</div>';
+  } else {
+    bannerWrap.innerHTML = `<div class="pii-banner pii-fail">FAIL — ${data.findings.length} PII finding(s)</div>`;
+  }
+
+  // Stats
+  const statsEl = document.getElementById('pii-stats');
+  statsEl.innerHTML = [
+    statCard(data.files_scanned || 0, 'Files Scanned'),
+    statCard(data.findings.length, 'Findings', data.findings.length > 0 ? 'var(--error)' : null),
+  ].join('');
+
+  // Findings table
+  const findingsSection = document.getElementById('pii-findings-section');
+  if (data.findings.length > 0) {
+    findingsSection.style.display = '';
+    const tbody = document.getElementById('pii-findings-body');
+    tbody.innerHTML = '';
+    for (const f of data.findings) {
+      const shortFile = f.file.split(/[/\\]/).slice(-3).join('/');
+      tbody.innerHTML += `<tr>
+        <td title="${escHtml(f.file)}">${escHtml(shortFile)}</td>
+        <td>${escHtml(f.location)}</td>
+        <td><span class="finding-matched">${escHtml(f.matched)}</span></td>
+      </tr>`;
+    }
+  } else {
+    findingsSection.style.display = 'none';
+  }
+
+  completedSteps.add(5);
+}
+
+/* ===================================================================
+   Shared Callbacks (called from Python)
+   =================================================================== */
+function onProgress(data) {
+  if (data.step === 3) {
+    if (data.total > 0) {
+      const pct = Math.round((data.current / data.total) * 100);
+      document.getElementById('anon-progress-fill').style.width = pct + '%';
+      document.getElementById('anon-progress-pct').textContent = pct + '%';
+      document.getElementById('anon-progress-text').textContent = data.file || 'Processing...';
+    }
+  } else if (data.step === 4) {
+    if (data.file) {
+      document.getElementById('sort-progress-text').textContent = data.file;
+    }
+  } else if (data.step === 5) {
+    // Handled by loading spinner
+  }
+}
+
+function onLogMessage(data) {
+  // Append to the currently active terminal
+  const termId = activeTerminalId;
+  if (!termId) return;
+  const terminal = document.getElementById(termId);
+  if (!terminal) return;
+
+  const cls = data.level === 'error' ? 'log-error'
+    : data.level === 'warning' ? 'log-warning'
+    : 'log-info';
+
+  const line = document.createElement('div');
+  line.className = 'log-line ' + cls;
+  line.textContent = data.message;
+  terminal.appendChild(line);
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function onError(data) {
+  const errorBoxId = {
+    2: null,          // Handled inline
+    3: 'anon-error',
+    4: 'sort-error',
+    5: 'pii-error',
+  }[data.step];
+
+  if (errorBoxId) {
+    const box = document.getElementById(errorBoxId);
+    box.textContent = data.message;
+    box.classList.add('visible');
+  } else {
+    alert('Error: ' + data.message);
+  }
+}
+
+/* ===================================================================
+   Helpers
+   =================================================================== */
+function statCard(value, label, color) {
+  const colorStyle = color ? ` style="color: ${color}"` : '';
+  return `<div class="stat-card">
+    <div class="stat-value"${colorStyle}>${value}</div>
+    <div class="stat-label">${escHtml(label)}</div>
+  </div>`;
+}
+
+function escHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ===================================================================
+   Startup
+   =================================================================== */
+window.addEventListener('pywebviewready', async () => {
+  try {
+    const defaults = await window.pywebview.api.get_defaults();
+    if (defaults.output_base) {
+      document.getElementById('output-path').value = defaults.output_base;
+    }
+  } catch (e) {
+    console.error('Failed to load defaults:', e);
+  }
+});
+</script>
+</body>
+</html>

@@ -92,8 +92,61 @@ Applied corrections:
 - Vertical shift (cm)
 
 ### 4. Transformation Matrices
-- **Unmatched**: Initial position before registration
-- **Correction**: Final position after registration applied
+- **Unmatched**: Fixed coordinate-system rotation (XVI to patient/IEC coordinates) plus isocenter offset. This matrix is **identical across all fractions** for a given patient — it contains no patient-specific correction.
+- **Correction**: Same coordinate rotation as Unmatched, plus the patient-specific translational and rotational corrections from the registration. The relative rotation `R_correction @ R_unmatched^(-1)` yields a near-identity matrix encoding the small correction angles.
+
+In practice, the Clipbox INI values (`Align.clip1`) provide the corrections directly — matrix decomposition is not needed for extracting shifts and rotations.
+
+### 5. INI Field Relationships
+
+The INI `[ALIGNMENT]` section contains several related representations of the same correction:
+
+```ini
+Align.clip1=-0.21, 0.05, -0.28, 0.4, 0.8, 359.8
+#            lat    long   vert   rot  pitch roll  (6-DOF)
+
+Align.correction=-0.21, 0.05, -0.28, 0.4, 0.8, 359.8
+#                 identical to Align.clip1 when Clipbox is the correction source
+
+CouchShiftLat=0.21        # = negated Clipbox lateral
+CouchShiftLong=-0.05      # = negated Clipbox longitudinal
+CouchShiftHeight=0.28     # = negated Clipbox vertical
+CouchPitch=-              # unavailable (couch rotation not recorded separately)
+CouchRoll=-
+CouchYaw=-
+```
+
+The CouchShift values are the **negated** Clipbox translations — they represent the physical couch movement direction (opposite to the image-space correction). Rotation values above 180 degrees use a 360-degree wrapping convention (e.g. 359.8 means -0.2 degrees).
+
+## Mapping to Mosaiq CBCT Shift Records
+
+The following mapping was validated against 6 CBCT registration sessions (PAT01, 4 fractions) by comparing RPS Clipbox values to Mosaiq image-list shift records. All non-zero values matched exactly.
+
+### Translations (cm)
+
+| Mosaiq Field | RPS Clipbox Field | Sign | CouchShift Field | Sign |
+|---|---|---|---|---|
+| Sup/Inf | `longitudinal` | same | `CouchShiftLong` | negated |
+| Lft/Rht | `lateral` | same | `CouchShiftLat` | negated |
+| Ant/Pos | `vertical` | same | `CouchShiftHeight` | negated |
+
+Mosaiq sign convention: Sup=+, Inf=-, Lft=+, Rht=-, Ant=+, Pos=-.
+
+### Rotations (degrees)
+
+| Mosaiq Field | RPS Clipbox Field | Sign |
+|---|---|---|
+| Cor(B) | `roll` | same |
+| Sag(B) | `rotation` | same |
+| Trans(B) | `pitch` | **negated** |
+
+Mosaiq sign convention: CW=+, CCW=-. Clipbox angles >180 must be unwrapped (subtract 360) before comparison.
+
+**The rotation axes are permuted** — Mosaiq's Coronal maps to Clipbox Roll, Sagittal maps to Clipbox Rotation, and Transverse maps to negated Clipbox Pitch. This was confirmed across all 4 non-zero rotation cases with exact agreement.
+
+### Verification Script
+
+The mapping was determined using `cbct-shifts/compare_rps_mosaiq.py`, which parses the Mosaiq TSV log (`cbct-shifts/CBCT-shifts-from-mosaiq.txt`), extracts RPS data from all fraction CBCT files, matches records by date/time, and prints a side-by-side comparison.
 
 ## Safety Considerations
 
@@ -176,6 +229,6 @@ correction_matrix = extractor.get_correction_matrix(0)
 
 ---
 
-**Document Version**: 1.0  
-**Date**: 2025-11-04  
-**Tool**: extract_elekta_rps_matrices.py
+**Document Version**: 1.1
+**Date**: 2026-02-24
+**Tool**: extract_elekta_rps_matrices.py, cbct-shifts/compare_rps_mosaiq.py
