@@ -974,14 +974,23 @@ async function submitConfig() {
   document.getElementById('discovery-results').style.display = 'none';
   activeTerminalId = null;
 
-  // Run discovery (synchronous API call — returns result directly)
-  const discovery = await window.pywebview.api.run_discovery();
-  if (discovery && discovery.ok) {
-    onDiscoveryComplete(discovery);
-  } else {
-    alert('Discovery failed: ' + (discovery ? discovery.error : 'unknown error'));
-    document.getElementById('discovery-loading').style.display = 'none';
-  }
+  // Start discovery (background thread) then poll for result
+  await window.pywebview.api.run_discovery();
+  pollForDiscovery();
+}
+
+function pollForDiscovery() {
+  const poll = setInterval(async () => {
+    const result = await window.pywebview.api.poll_discovery();
+    if (result === null || result === undefined) return; // not ready yet
+    clearInterval(poll);
+    if (result.ok) {
+      onDiscoveryComplete(result);
+    } else {
+      alert('Discovery failed: ' + result.error);
+      document.getElementById('discovery-loading').style.display = 'none';
+    }
+  }, 500);
 }
 
 /* ===================================================================

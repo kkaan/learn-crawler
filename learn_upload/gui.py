@@ -70,7 +70,7 @@ def _push_to_js(func_name: str, data) -> None:
     try:
         _window.evaluate_js(js)
     except Exception:
-        logger.exception("evaluate_js failed for %s", func_name)
+        pass  # Window may have been closed
 
 
 def _serialize_session(session) -> dict:
@@ -104,6 +104,7 @@ class LearnPipelineAPI:
         self._sessions: list = []
         self._fraction_map: dict = {}
         self._anon_dirs: dict = {}
+        self._discovery_result: dict | None = None
 
     # ----- Step 1: Configuration -------------------------------------------
 
@@ -158,8 +159,16 @@ class LearnPipelineAPI:
 
     # ----- Step 2: Discovery -----------------------------------------------
 
-    def run_discovery(self) -> dict:
-        """Discover XVI sessions (called from JS via await, runs on pywebview thread)."""
+    def run_discovery(self) -> None:
+        """Start discovery in a background thread (non-blocking)."""
+        self._discovery_result = None
+        threading.Thread(target=self._do_discovery, daemon=True).start()
+
+    def poll_discovery(self) -> dict | None:
+        """Return discovery result if ready, else None. Called by JS polling."""
+        return self._discovery_result
+
+    def _do_discovery(self) -> None:
         cfg = self._config
         try:
             patient_dir = Path(cfg["source_path"])
@@ -181,7 +190,7 @@ class LearnPipelineAPI:
             for fx_label, fx_sessions in self._fraction_map.items():
                 fractions[fx_label] = [_serialize_session(s) for s in fx_sessions]
 
-            return {
+            self._discovery_result = {
                 "ok": True,
                 "session_count": len(self._sessions),
                 "fraction_count": len(self._fraction_map),
@@ -191,7 +200,7 @@ class LearnPipelineAPI:
             }
         except Exception as exc:
             logger.exception("Discovery failed")
-            return {"ok": False, "error": str(exc)}
+            self._discovery_result = {"ok": False, "error": str(exc)}
 
     # ----- Step 3: Anonymise -----------------------------------------------
 
@@ -203,7 +212,8 @@ class LearnPipelineAPI:
         cfg = self._config
         try:
             tps_path = cfg.get("tps_path", "")
-            staging_dir = Path(cfg.get("staging_path", "")) or (Path(cfg["output_path"]) / "_staging")
+            sp = cfg.get("staging_path", "").strip()
+            staging_dir = Path(sp) if sp else (Path(cfg["output_path"]) / "_staging")
 
             if not tps_path or not Path(tps_path).is_dir():
                 _push_to_js("onAnonymiseComplete", {
