@@ -60,6 +60,9 @@ class DicomAnonymiser:
         """
         dcm = pydicom.dcmread(dcm_path)
 
+        # Capture original PatientID before replacing — used for scrubbing
+        original_patient_id = str(getattr(dcm, "PatientID", ""))
+
         for tag in DICOM_TAGS_REPLACE:
             if tag == (0x0010, 0x0010):  # PatientName
                 dcm[tag].value = PersonName(f"{self.anon_id}^{self.site_name}")
@@ -69,6 +72,13 @@ class DicomAnonymiser:
         for tag in DICOM_TAGS_CLEAR:
             if tag in dcm:
                 dcm[tag].value = ""
+
+        # Scrub original patient ID from StudyDescription (XVI RPS files
+        # embed MRN in text like "Tx Plan for 12345678 on ...")
+        if original_patient_id and hasattr(dcm, "StudyDescription"):
+            dcm.StudyDescription = dcm.StudyDescription.replace(
+                original_patient_id, self.anon_id
+            )
 
         # Mirror the subdirectory structure relative to source_base
         base = Path(source_base) if source_base is not None else self.patient_dir
