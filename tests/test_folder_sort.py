@@ -1,6 +1,7 @@
 """Tests for learn_upload.folder_sort — session discovery, fraction assignment, file copying."""
 
 import textwrap
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -27,25 +28,38 @@ def _make_frames_xml(
     dicom_uid: str = "1.3.46.423632.33783920233217242713.500",
     kv: str = "120.0",
     ma: str = "25.5",
+    patient_id: str = "",
+    patient_first_name: str = "",
+    patient_last_name: str = "",
 ) -> str:
     """Generate a _Frames.xml content string."""
-    return textwrap.dedent(f"""\
-        <?xml version="1.0" encoding="utf-8"?>
-        <FrameData>
-            <Treatment>
-                <ID>{treatment_id}</ID>
-            </Treatment>
-            <Image>
-                <AcquisitionPresetName>{preset_name}</AcquisitionPresetName>
-                <DicomUID>{dicom_uid}</DicomUID>
-                <kV>{kv}</kV>
-                <mA>{ma}</mA>
-            </Image>
-            <Frames>
-                <Frame Number="1" />
-            </Frames>
-        </FrameData>
-    """)
+    patient_block = ""
+    if patient_id or patient_first_name or patient_last_name:
+        patient_block = (
+            "    <Patient>\n"
+            f"        <FirstName>{patient_first_name}</FirstName>\n"
+            f"        <LastName>{patient_last_name}</LastName>\n"
+            f"        <ID>{patient_id}</ID>\n"
+            "    </Patient>\n"
+        )
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        "<FrameData>\n"
+        f"{patient_block}"
+        "    <Treatment>\n"
+        f"        <ID>{treatment_id}</ID>\n"
+        "    </Treatment>\n"
+        "    <Image>\n"
+        f"        <AcquisitionPresetName>{preset_name}</AcquisitionPresetName>\n"
+        f"        <DicomUID>{dicom_uid}</DicomUID>\n"
+        f"        <kV>{kv}</kV>\n"
+        f"        <mA>{ma}</mA>\n"
+        "    </Image>\n"
+        "    <Frames>\n"
+        '        <Frame Number="1" />\n'
+        "    </Frames>\n"
+        "</FrameData>\n"
+    )
 
 
 def _make_xvi_session(
@@ -451,9 +465,10 @@ class TestCopyMotionviewFiles:
         fx_path.mkdir(parents=True)
 
         mapper = LearnFolderMapper(patient_dir, "PAT01", "Prostate", tmp_path / "out")
-        count = mapper.copy_motionview_files(session, fx_path)
+        counts = mapper.copy_motionview_files(session, fx_path)
 
-        assert count == 5
+        assert counts["his"] == 5
+        assert counts["frames_xml"] == 1  # _Frames.xml from _make_xvi_session
         dest_files = list((fx_path / "KIM-KV" / "img_mv").glob("*.his"))
         assert len(dest_files) == 5
 
@@ -585,3 +600,213 @@ class TestExecute:
         # Verify files actually copied
         ips = out / "Prostate" / "Patient Images" / "PAT01" / "FX0" / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS"
         assert len(list(ips.glob("*.his"))) == 4
+
+
+# ---------------------------------------------------------------------------
+# _Frames.xml copying
+# ---------------------------------------------------------------------------
+
+class TestFramesXmlCopied:
+    def test_frames_xml_copied_with_cbct(self, tmp_path):
+        """_Frames.xml anonymised and placed in IPS/ alongside .his files."""
+        patient_dir = tmp_path / "patient_12345678"
+        images_dir = patient_dir / "IMAGES" / "img_001"
+        images_dir.mkdir(parents=True)
+
+        xml_content = _make_frames_xml(
+            patient_id="12345678",
+            patient_first_name="JOHN",
+            patient_last_name="SMITH",
+        )
+        (images_dir / "_Frames.xml").write_text(xml_content, encoding="utf-8")
+        (images_dir / "frame_0000.his").write_bytes(b"\x00" * 100)
+
+        # Reconstruction for datetime extraction
+        recon = images_dir / "Reconstruction"
+        recon.mkdir()
+        ini = "[IDENTIFICATION]\nScanUID=1.3.46.423632.12345.2023-03-21100000000\n"
+        (recon / "recon.INI").write_text(ini, encoding="utf-8")
+
+        session = CBCTSession(
+            img_dir=images_dir,
+            dicom_uid="uid1",
+            acquisition_preset="4ee Pelvis",
+            session_type="cbct",
+            treatment_id="Prostate",
+        )
+
+        cbct_path = tmp_path / "dest" / "CBCT1"
+        cbct_path.mkdir(parents=True)
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", tmp_path / "out")
+        counts = mapper.copy_cbct_files(session, cbct_path)
+
+        assert counts["frames_xml"] == 1
+        output_xml = cbct_path / "CBCT Projections" / "IPS" / "_Frames.xml"
+        assert output_xml.exists()
+
+        # Verify PII removed
+        tree = ET.parse(output_xml)
+        root = tree.getroot()
+        patient = root.find("Patient")
+        assert patient.find("ID").text == "PRIME001"
+        assert patient.find("LastName").text == "PRIME001"
+
+    def test_frames_xml_copied_with_motionview(self, tmp_path):
+        """_Frames.xml anonymised and placed in KIM-KV/{img_dir}/."""
+        patient_dir = tmp_path / "patient_12345678"
+        images_dir = patient_dir / "IMAGES" / "img_mv01"
+        images_dir.mkdir(parents=True)
+
+        xml_content = _make_frames_xml(
+            preset_name="13a KIM S20 MotionView",
+            patient_id="12345678",
+            patient_first_name="JOHN",
+            patient_last_name="SMITH",
+        )
+        (images_dir / "_Frames.xml").write_text(xml_content, encoding="utf-8")
+        for i in range(3):
+            (images_dir / f"frame_{i:04d}.his").write_bytes(b"\x00" * 100)
+
+        session = CBCTSession(
+            img_dir=images_dir,
+            dicom_uid="uid_mv",
+            acquisition_preset="13a KIM S20 MotionView",
+            session_type="motionview",
+            treatment_id="Prostate",
+        )
+
+        fx_path = tmp_path / "dest" / "FX0"
+        fx_path.mkdir(parents=True)
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", tmp_path / "out")
+        counts = mapper.copy_motionview_files(session, fx_path)
+
+        assert counts["his"] == 3
+        assert counts["frames_xml"] == 1
+
+        output_xml = fx_path / "KIM-KV" / "img_mv01" / "_Frames.xml"
+        assert output_xml.exists()
+
+        tree = ET.parse(output_xml)
+        root = tree.getroot()
+        patient = root.find("Patient")
+        assert patient.find("ID").text == "PRIME001"
+        assert "12345678" not in output_xml.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# copy_centroid_file
+# ---------------------------------------------------------------------------
+
+class TestCopyCentroidFile:
+    def test_copy_centroid_file(self, tmp_path):
+        """MRN and patient name replaced; file placed in Patient Files/."""
+        patient_dir = tmp_path / "patient_12345678"
+        patient_dir.mkdir()
+
+        centroid = tmp_path / "Centroid_12345678.txt"
+        centroid.write_text("12345678\nSMITH JOHN\n1.23 4.56 7.89\n", encoding="utf-8")
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", tmp_path / "out")
+        result = mapper.copy_centroid_file(centroid)
+
+        assert result.exists()
+        assert result.name == "Centroid_PRIME001.txt"
+        assert result.parent == tmp_path / "out" / "Prostate" / "Patient Files" / "PRIME001"
+
+        text = result.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        assert lines[0] == "PRIME001"
+        assert lines[1] == "PRIME001"
+        assert "12345678" not in text
+        assert "SMITH" not in text
+        # Data lines preserved
+        assert lines[2] == "1.23 4.56 7.89"
+
+
+# ---------------------------------------------------------------------------
+# copy_trajectory_logs
+# ---------------------------------------------------------------------------
+
+class TestCopyTrajectoryLogs:
+    def _setup_trajectory(self, tmp_path):
+        """Create a patient dir and trajectory base dir with FX01/FX02."""
+        patient_dir = tmp_path / "patient_12345678"
+        patient_dir.mkdir()
+
+        traj_base = tmp_path / "trajectory"
+        for fx in ("FX01", "FX02"):
+            fx_dir = traj_base / fx
+            fx_dir.mkdir(parents=True)
+            # MarkerLocations with PII path
+            ml_text = (
+                "Marker 1\n"
+                f"C:\\data\\patient_12345678\\trajectory\\{fx}\\markers.dat\n"
+                "1.0 2.0 3.0\n"
+            )
+            (fx_dir / "MarkerLocations.txt").write_text(ml_text, encoding="utf-8")
+            (fx_dir / "MarkerLocationsGA.txt").write_text(ml_text, encoding="utf-8")
+            # Non-PII files
+            (fx_dir / "couchShifts.txt").write_text("0.1 0.2 0.3\n", encoding="utf-8")
+            (fx_dir / "covOutput.txt").write_text("cov data\n", encoding="utf-8")
+            (fx_dir / "Rotation.txt").write_text("rot data\n", encoding="utf-8")
+
+        return patient_dir, traj_base
+
+    def test_copy_trajectory_logs(self, tmp_path):
+        """Files placed in correct Trajectory Logs structure."""
+        patient_dir, traj_base = self._setup_trajectory(tmp_path)
+        out = tmp_path / "out"
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", out)
+        counts = mapper.copy_trajectory_logs(traj_base)
+
+        assert counts["fx_count"] == 2
+        # 5 files per FX (2 MarkerLocations + 3 plain) × 2 FXs = 10
+        assert counts["files_copied"] == 10
+
+        for fx in ("FX01", "FX02"):
+            traj_dest = out / "Prostate" / "Trajectory Logs" / "PRIME001" / fx / "Trajectory Logs"
+            assert traj_dest.is_dir()
+            assert (traj_dest / "MarkerLocations.txt").exists()
+            assert (traj_dest / "MarkerLocationsGA.txt").exists()
+            assert (traj_dest / "couchShifts.txt").exists()
+            assert (traj_dest / "covOutput.txt").exists()
+            assert (traj_dest / "Rotation.txt").exists()
+
+            # Treatment Records sibling created
+            treat_dest = out / "Prostate" / "Trajectory Logs" / "PRIME001" / fx / "Treatment Records"
+            assert treat_dest.is_dir()
+
+    def test_trajectory_marker_locations_scrubbed(self, tmp_path):
+        """patient_12345678 replaced with patient_PRIME001 in MarkerLocations."""
+        patient_dir, traj_base = self._setup_trajectory(tmp_path)
+        out = tmp_path / "out"
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", out)
+        mapper.copy_trajectory_logs(traj_base)
+
+        ml_path = (
+            out / "Prostate" / "Trajectory Logs" / "PRIME001"
+            / "FX01" / "Trajectory Logs" / "MarkerLocations.txt"
+        )
+        text = ml_path.read_text(encoding="utf-8")
+        assert "patient_12345678" not in text
+        assert "patient_PRIME001" in text
+
+    def test_trajectory_no_pii_files_unchanged(self, tmp_path):
+        """couchShifts, covOutput, Rotation copied byte-for-byte."""
+        patient_dir, traj_base = self._setup_trajectory(tmp_path)
+        out = tmp_path / "out"
+
+        mapper = LearnFolderMapper(patient_dir, "PRIME001", "Prostate", out)
+        mapper.copy_trajectory_logs(traj_base)
+
+        for fname in ("couchShifts.txt", "covOutput.txt", "Rotation.txt"):
+            src = traj_base / "FX01" / fname
+            dest = (
+                out / "Prostate" / "Trajectory Logs" / "PRIME001"
+                / "FX01" / "Trajectory Logs" / fname
+            )
+            assert src.read_text() == dest.read_text()

@@ -7,6 +7,7 @@ are already anonymised by the system.
 
 import logging
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pydicom
@@ -134,6 +135,59 @@ class DicomAnonymiser:
     def anonymise_plan(self) -> list[Path]:
         """Anonymise all DICOM files in DICOM_PLAN/."""
         return [self.anonymise_file(f) for f in self._glob_dcm("DICOM_PLAN")]
+
+    def anonymise_frames_xml(self, xml_path: Path, output_path: Path) -> Path:
+        """Anonymise a ``_Frames.xml`` file, removing patient PII.
+
+        Replaces ``<Patient><FirstName>``, ``<LastName>``, and ``<ID>`` with
+        *anon_id*.  Also regex-scrubs the original patient ID from
+        ``<Treatment><Description>`` text (if present).
+
+        Parameters
+        ----------
+        xml_path : Path
+            Path to the source ``_Frames.xml``.
+        output_path : Path
+            Destination path for the anonymised XML.
+
+        Returns
+        -------
+        Path
+            The written output file path.
+        """
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+
+        # Detect original patient ID before replacing it
+        patient_el = root.find("Patient")
+        original_id = None
+        if patient_el is not None:
+            id_el = patient_el.find("ID")
+            if id_el is not None and id_el.text:
+                original_id = id_el.text.strip()
+
+            # Replace PII tags
+            for tag_name in ("FirstName", "LastName", "ID"):
+                el = patient_el.find(tag_name)
+                if el is not None:
+                    if tag_name == "FirstName":
+                        el.text = ""
+                    else:
+                        el.text = self.anon_id
+
+        # Scrub original patient ID from Treatment/Description
+        if original_id:
+            treatment_el = root.find("Treatment")
+            if treatment_el is not None:
+                desc_el = treatment_el.find("Description")
+                if desc_el is not None and desc_el.text:
+                    desc_el.text = desc_el.text.replace(original_id, self.anon_id)
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        tree.write(output_path, encoding="unicode", xml_declaration=True)
+        logger.info("Anonymised _Frames.xml %s -> %s", xml_path, output_path)
+        return output_path
 
     def anonymise_all(self) -> dict:
         """Anonymise CT_SET and DICOM_PLAN, returning a summary dict."""

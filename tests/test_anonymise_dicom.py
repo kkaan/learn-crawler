@@ -1,5 +1,6 @@
 """Tests for learn_upload.anonymise_dicom — DicomAnonymiser."""
 
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pydicom
@@ -325,6 +326,84 @@ class TestAnonymiseFileCustomSourceBase:
         # Output should mirror the relative path from tps_root
         assert out == output_dir / "sub" / "CT" / "slice.DCM"
         assert out.exists()
+
+
+class TestAnonymiseFramesXml:
+    _SAMPLE_XML = """\
+<?xml version="1.0" encoding="utf-8"?>
+<FrameData>
+    <Patient>
+        <FirstName>JOHN</FirstName>
+        <LastName>SMITH</LastName>
+        <ID>12345678</ID>
+    </Patient>
+    <Treatment>
+        <ID>Prostate</ID>
+        <Description>Plan for 12345678 prostate treatment</Description>
+    </Treatment>
+    <Image>
+        <AcquisitionPresetName>4ee Pelvis Soft S20</AcquisitionPresetName>
+        <DicomUID>1.3.46.001</DicomUID>
+    </Image>
+</FrameData>
+"""
+
+    def test_anonymise_frames_xml(self, tmp_path):
+        """Patient name, ID replaced; MRN scrubbed from description."""
+        patient_dir = tmp_path / "patient_12345678"
+        patient_dir.mkdir()
+        xml_file = patient_dir / "_Frames.xml"
+        xml_file.write_text(self._SAMPLE_XML, encoding="utf-8")
+
+        output_path = tmp_path / "out" / "_Frames.xml"
+        anon = DicomAnonymiser(patient_dir, "PRIME001", tmp_path / "staging")
+        result = anon.anonymise_frames_xml(xml_file, output_path)
+
+        assert result == output_path
+        assert output_path.exists()
+
+        tree = ET.parse(output_path)
+        root = tree.getroot()
+
+        patient = root.find("Patient")
+        assert patient.find("FirstName").text == "" or patient.find("FirstName").text is None
+        assert patient.find("LastName").text == "PRIME001"
+        assert patient.find("ID").text == "PRIME001"
+
+        desc = root.find("Treatment").find("Description").text
+        assert "12345678" not in desc
+        assert "PRIME001" in desc
+
+        # Non-PII tags unchanged
+        assert root.find("Treatment").find("ID").text == "Prostate"
+        assert root.find("Image").find("DicomUID").text == "1.3.46.001"
+
+    def test_anonymise_frames_xml_missing_tags(self, tmp_path):
+        """Gracefully handles XML without Patient element."""
+        patient_dir = tmp_path / "patient_00000001"
+        patient_dir.mkdir()
+        minimal_xml = """\
+<?xml version="1.0" encoding="utf-8"?>
+<FrameData>
+    <Treatment><ID>Brain</ID></Treatment>
+    <Image><AcquisitionPresetName>preset</AcquisitionPresetName></Image>
+</FrameData>
+"""
+        xml_file = patient_dir / "_Frames.xml"
+        xml_file.write_text(minimal_xml, encoding="utf-8")
+
+        output_path = tmp_path / "out" / "_Frames.xml"
+        anon = DicomAnonymiser(patient_dir, "PAT01", tmp_path / "staging")
+        result = anon.anonymise_frames_xml(xml_file, output_path)
+
+        assert result == output_path
+        assert output_path.exists()
+
+        tree = ET.parse(output_path)
+        root = tree.getroot()
+        # Patient element absent — should not crash
+        assert root.find("Patient") is None
+        assert root.find("Treatment").find("ID").text == "Brain"
 
 
 class TestEdgeCases:

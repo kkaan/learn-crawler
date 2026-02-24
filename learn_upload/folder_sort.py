@@ -9,6 +9,7 @@ Automates the manual SOP steps of:
 """
 
 import logging
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,6 +18,7 @@ from typing import Optional
 
 import pydicom
 
+from learn_upload.anonymise_dicom import DicomAnonymiser
 from learn_upload.utils import (
     extract_ini_from_rps,
     parse_couch_shifts,
@@ -323,8 +325,20 @@ class LearnFolderMapper:
 
     # ----- Directory creation -----
 
-    def create_learn_structure(self, fraction_map: dict[str, list[CBCTSession]]) -> Path:
+    def create_learn_structure(
+        self,
+        fraction_map: dict[str, list[CBCTSession]],
+        trajectory_fx_labels: list[str] | None = None,
+    ) -> Path:
         """Create the full LEARN directory tree.
+
+        Parameters
+        ----------
+        fraction_map : dict
+            Fraction label → list of sessions (for Patient Images).
+        trajectory_fx_labels : list[str], optional
+            Fraction labels (e.g. ``["FX01", "FX02"]``) for Trajectory Logs
+            directories.  If *None*, trajectory dirs are not created.
 
         Returns the site root path.
         """
@@ -364,6 +378,13 @@ class LearnFolderMapper:
             # KIM-KV directory (always created per fraction)
             (fx_path / "KIM-KV").mkdir(parents=True, exist_ok=True)
 
+        # Trajectory Logs — per fraction label
+        if trajectory_fx_labels:
+            for fx_label in trajectory_fx_labels:
+                traj_fx = site_root / "Trajectory Logs" / self.anon_id / fx_label
+                (traj_fx / "Trajectory Logs").mkdir(parents=True, exist_ok=True)
+                (traj_fx / "Treatment Records").mkdir(parents=True, exist_ok=True)
+
         return site_root
 
     # ----- File copying -----
@@ -371,9 +392,9 @@ class LearnFolderMapper:
     def copy_cbct_files(self, session: CBCTSession, cbct_path: Path) -> dict:
         """Copy CBCT/KIM-Learning files to the LEARN structure.
 
-        Returns ``{"his": N, "scan": M, "rps": K}``.
+        Returns ``{"his": N, "scan": M, "rps": K, "frames_xml": 0|1}``.
         """
-        counts = {"his": 0, "scan": 0, "rps": 0}
+        counts = {"his": 0, "scan": 0, "rps": 0, "frames_xml": 0}
 
         # .his → CBCT Projections/IPS/
         ips_dir = cbct_path / "CBCT Projections" / "IPS"
@@ -381,6 +402,16 @@ class LearnFolderMapper:
         for his_file in sorted(session.img_dir.glob("*.his")):
             shutil.copy2(his_file, ips_dir / his_file.name)
             counts["his"] += 1
+
+        # _Frames.xml → CBCT Projections/IPS/_Frames.xml (anonymised)
+        frames_xml = session.img_dir / "_Frames.xml"
+        if frames_xml.exists():
+            anon = DicomAnonymiser(
+                self.patient_dir, self.anon_id, self.output_base,
+                site_name=self.site_name,
+            )
+            anon.anonymise_frames_xml(frames_xml, ips_dir / "_Frames.xml")
+            counts["frames_xml"] = 1
 
         # Reconstruction/ SCAN files → Reconstructed CBCT/
         recon_dest = cbct_path / "Reconstructed CBCT"
@@ -392,27 +423,45 @@ class LearnFolderMapper:
                     shutil.copy2(scan_file, recon_dest / scan_file.name)
                     counts["scan"] += 1
 
-        # RPS → Registration file/
+        # RPS → Registration file/ (anonymised)
         if session.rps_path and session.rps_path.exists():
             reg_dest = cbct_path / "Registration file"
             reg_dest.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(session.rps_path, reg_dest / session.rps_path.name)
+            anon = DicomAnonymiser(
+                self.patient_dir, self.anon_id, reg_dest,
+                site_name=self.site_name,
+            )
+            anon.anonymise_file(
+                session.rps_path,
+                source_base=session.rps_path.parent,
+            )
             counts["rps"] += 1
 
         return counts
 
-    def copy_motionview_files(self, session: CBCTSession, fx_path: Path) -> int:
+    def copy_motionview_files(self, session: CBCTSession, fx_path: Path) -> dict:
         """Copy MotionView .his files to KIM-KV/{img_dirname}/.
 
-        Returns file count.
+        Returns ``{"his": N, "frames_xml": 0|1}``.
         """
         dest = fx_path / "KIM-KV" / session.img_dir.name
         dest.mkdir(parents=True, exist_ok=True)
-        count = 0
+        counts = {"his": 0, "frames_xml": 0}
         for his_file in sorted(session.img_dir.glob("*.his")):
             shutil.copy2(his_file, dest / his_file.name)
-            count += 1
-        return count
+            counts["his"] += 1
+
+        # _Frames.xml → KIM-KV/{img_dir}/_Frames.xml (anonymised)
+        frames_xml = session.img_dir / "_Frames.xml"
+        if frames_xml.exists():
+            anon = DicomAnonymiser(
+                self.patient_dir, self.anon_id, self.output_base,
+                site_name=self.site_name,
+            )
+            anon.anonymise_frames_xml(frames_xml, dest / "_Frames.xml")
+            counts["frames_xml"] = 1
+
+        return counts
 
     def copy_anonymised_plans(
         self,
@@ -456,6 +505,113 @@ class LearnFolderMapper:
 
         return counts
 
+    # ----- Centroid file -----
+
+    def copy_centroid_file(self, centroid_path: Path) -> Path:
+        """Anonymise and copy a centroid file to Patient Files/{anon_id}/.
+
+        Lines 1 and 2 of the centroid file contain MRN and patient name
+        respectively; both are replaced with *anon_id*.  The MRN in the
+        filename is also replaced.
+
+        Returns the output file path.
+        """
+        centroid_path = Path(centroid_path)
+        lines = centroid_path.read_text(encoding="utf-8", errors="ignore").splitlines(
+            keepends=True
+        )
+
+        # Detect original patient ID from line 1 (MRN)
+        original_id = lines[0].strip() if lines else ""
+
+        # Replace line 1 (MRN) and line 2 (patient name) with anon_id
+        if len(lines) >= 1:
+            lines[0] = self.anon_id + "\n"
+        if len(lines) >= 2:
+            lines[1] = self.anon_id + "\n"
+
+        # Anonymise filename (replace MRN)
+        out_name = centroid_path.name
+        if original_id:
+            out_name = out_name.replace(original_id, self.anon_id)
+
+        site_root = self.output_base / self.site_name
+        dest_dir = site_root / "Patient Files" / self.anon_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        output_path = dest_dir / out_name
+
+        output_path.write_text("".join(lines), encoding="utf-8")
+        logger.info("Anonymised centroid %s -> %s", centroid_path, output_path)
+        return output_path
+
+    # ----- Trajectory logs -----
+
+    def copy_trajectory_logs(self, trajectory_base_dir: Path) -> dict:
+        """Copy KIM trajectory log files to the LEARN Trajectory Logs structure.
+
+        Auto-discovers FX## directories under *trajectory_base_dir*.  For each:
+        - ``MarkerLocations*.txt``: regex-replace ``patient_{MRN}`` with
+          ``patient_{anon_id}``
+        - ``couchShifts.txt``, ``covOutput.txt``, ``Rotation.txt``: copy as-is
+
+        Returns ``{"fx_count": N, "files_copied": M}``.
+        """
+        trajectory_base_dir = Path(trajectory_base_dir)
+        site_root = self.output_base / self.site_name
+
+        # Detect original patient ID from directory name
+        patient_dir_name = self.patient_dir.name  # e.g. "patient_12345678" or "Patient_12345678"
+        original_id = ""
+        if patient_dir_name.lower().startswith("patient_"):
+            original_id = patient_dir_name[len("patient_"):]
+
+        # Auto-discover FX## directories
+        fx_dirs = sorted(
+            d for d in trajectory_base_dir.iterdir()
+            if d.is_dir() and re.match(r"FX\d+", d.name, re.IGNORECASE)
+        )
+
+        counts = {"fx_count": 0, "files_copied": 0}
+
+        for fx_dir in fx_dirs:
+            fx_label = fx_dir.name  # e.g. "FX01"
+            dest_traj = (
+                site_root / "Trajectory Logs" / self.anon_id
+                / fx_label / "Trajectory Logs"
+            )
+            dest_traj.mkdir(parents=True, exist_ok=True)
+            # Also create Treatment Records sibling
+            dest_treat = (
+                site_root / "Trajectory Logs" / self.anon_id
+                / fx_label / "Treatment Records"
+            )
+            dest_treat.mkdir(parents=True, exist_ok=True)
+
+            counts["fx_count"] += 1
+
+            for f in sorted(fx_dir.iterdir()):
+                if not f.is_file():
+                    continue
+
+                if f.name.lower().startswith("markerlocations"):
+                    # Scrub patient_{MRN} → patient_{anon_id}
+                    text = f.read_text(encoding="utf-8", errors="ignore")
+                    if original_id:
+                        text = text.replace(
+                            f"patient_{original_id}",
+                            f"patient_{self.anon_id}",
+                        )
+                    (dest_traj / f.name).write_text(text, encoding="utf-8")
+                    counts["files_copied"] += 1
+                elif f.name.lower() in (
+                    "couchshifts.txt", "covoutput.txt", "rotation.txt",
+                ):
+                    shutil.copy2(f, dest_traj / f.name)
+                    counts["files_copied"] += 1
+
+        logger.info("Trajectory logs copied: %s", counts)
+        return counts
+
     # ----- Execute -----
 
     def execute(
@@ -464,6 +620,8 @@ class LearnFolderMapper:
         anon_plan_dir: Path = None,
         anon_struct_dir: Path = None,
         anon_dose_dir: Path = None,
+        centroid_path: Path = None,
+        trajectory_base_dir: Path = None,
         dry_run: bool = False,
     ) -> dict:
         """Run the full folder mapping pipeline.
@@ -478,6 +636,10 @@ class LearnFolderMapper:
             Directory containing anonymised structure set DICOM files.
         anon_dose_dir : Path, optional
             Directory containing anonymised dose DICOM files.
+        centroid_path : Path, optional
+            Path to a centroid file to anonymise and copy.
+        trajectory_base_dir : Path, optional
+            Base directory containing FX## trajectory log folders.
         dry_run : bool
             If True, create directories but skip file copies.
 
@@ -500,13 +662,25 @@ class LearnFolderMapper:
         fraction_map = self.assign_fractions(sessions)
         logger.info("Assigned %d fractions", len(fraction_map))
 
-        # 4. Create directory structure
-        site_root = self.create_learn_structure(fraction_map)
+        # 4. Discover trajectory FX labels for directory creation
+        trajectory_fx_labels = None
+        if trajectory_base_dir:
+            trajectory_base_dir = Path(trajectory_base_dir)
+            if trajectory_base_dir.is_dir():
+                trajectory_fx_labels = sorted(
+                    d.name for d in trajectory_base_dir.iterdir()
+                    if d.is_dir() and re.match(r"FX\d+", d.name, re.IGNORECASE)
+                )
+
+        # 5. Create directory structure
+        site_root = self.create_learn_structure(fraction_map, trajectory_fx_labels)
 
         summary = {
             "sessions": len(sessions),
             "fractions": len(fraction_map),
-            "files_copied": {"his": 0, "scan": 0, "rps": 0, "motionview": 0},
+            "files_copied": {
+                "his": 0, "scan": 0, "rps": 0, "motionview": 0, "frames_xml": 0,
+            },
             "dry_run": dry_run,
         }
 
@@ -514,7 +688,7 @@ class LearnFolderMapper:
             logger.info("Dry run — directories created, no files copied")
             return summary
 
-        # 5. Copy files
+        # 6. Copy files
         images_root = site_root / "Patient Images" / self.anon_id
         for fx_label, sessions_in_fx in fraction_map.items():
             fx_path = images_root / fx_label
@@ -530,15 +704,17 @@ class LearnFolderMapper:
                 summary["files_copied"]["his"] += counts["his"]
                 summary["files_copied"]["scan"] += counts["scan"]
                 summary["files_copied"]["rps"] += counts["rps"]
+                summary["files_copied"]["frames_xml"] += counts["frames_xml"]
 
             mv_sessions = [
                 s for s in sessions_in_fx if s.session_type == "motionview"
             ]
             for session in mv_sessions:
-                mv_count = self.copy_motionview_files(session, fx_path)
-                summary["files_copied"]["motionview"] += mv_count
+                mv_counts = self.copy_motionview_files(session, fx_path)
+                summary["files_copied"]["motionview"] += mv_counts["his"]
+                summary["files_copied"]["frames_xml"] += mv_counts["frames_xml"]
 
-        # 6. Copy anonymised plans
+        # 7. Copy anonymised plans
         has_anon = any([anon_ct_dir, anon_plan_dir, anon_struct_dir, anon_dose_dir])
         if has_anon and not dry_run:
             plan_counts = self.copy_anonymised_plans(
@@ -548,6 +724,18 @@ class LearnFolderMapper:
             summary["files_copied"]["plan"] = plan_counts["plan_count"]
             summary["files_copied"]["structures"] = plan_counts["structures_count"]
             summary["files_copied"]["dose"] = plan_counts["dose_count"]
+
+        # 8. Copy centroid file
+        if centroid_path:
+            centroid_path = Path(centroid_path)
+            if centroid_path.exists():
+                self.copy_centroid_file(centroid_path)
+                summary["files_copied"]["centroid"] = 1
+
+        # 9. Copy trajectory logs
+        if trajectory_base_dir and Path(trajectory_base_dir).is_dir():
+            traj_counts = self.copy_trajectory_logs(trajectory_base_dir)
+            summary["files_copied"]["trajectory"] = traj_counts["files_copied"]
 
         logger.info("Execute complete: %s", summary)
         return summary

@@ -44,6 +44,8 @@ DICOM_TAGS_REPLACE = {
 # Tags that are cleared (set to empty string).
 DICOM_TAGS_CLEAR = {
     (0x0010, 0x0030): "PatientBirthDate",
+    (0x0010, 0x1000): "OtherPatientIDs",
+    (0x0010, 0x1001): "OtherPatientNames",
     (0x0008, 0x0050): "AccessionNumber",
     (0x0008, 0x0080): "InstitutionName",
     (0x0008, 0x0081): "InstitutionAddress",
