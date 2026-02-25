@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt6.QtCore import (
+    QObject,
     QThread,
     Qt,
     pyqtSignal,
@@ -43,6 +44,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -484,12 +486,18 @@ class ReportWorker(QThread):
 # Logging handler that forwards to a QTextEdit widget
 # ---------------------------------------------------------------------------
 
+class _LogSignalBridge(QObject):
+    """Thread-safe bridge: emits a signal so QTextEdit.append runs on the main thread."""
+    log_message = pyqtSignal(str)
+
+
 class QtLogHandler(logging.Handler):
-    """Routes log records to a QTextEdit terminal widget."""
+    """Routes log records to a QTextEdit terminal widget (thread-safe via signal)."""
 
     def __init__(self, text_edit: QTextEdit):
         super().__init__()
-        self.text_edit = text_edit
+        self._bridge = _LogSignalBridge()
+        self._bridge.log_message.connect(text_edit.append)
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -502,7 +510,7 @@ class QtLogHandler(logging.Handler):
             else:
                 color = "#94a3b8"
             html = f'<span style="color:{color}">{_esc(msg)}</span>'
-            self.text_edit.append(html)
+            self._bridge.log_message.emit(html)
         except Exception:
             pass
 
@@ -580,9 +588,19 @@ class ConfigPage(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        outer_layout = QVBoxLayout(self)
+        page_layout = QVBoxLayout(self)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        page_layout.addWidget(scroll)
+
+        scroll_content = QWidget()
+        outer_layout = QVBoxLayout(scroll_content)
         outer_layout.setContentsMargins(24, 24, 24, 24)
         outer_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        scroll.setWidget(scroll_content)
 
         inner = QWidget()
         inner.setMaximumWidth(800)
@@ -1111,8 +1129,8 @@ class LearnPipelineWindow(QMainWindow):
     STEP_NAMES = [
         "Configuration",
         "Data Preview",
-        "Anonymise",
         "Folder Sort",
+        "Anonymise",
         "PII Verification",
         "CBCT Shift Report",
     ]
@@ -1231,8 +1249,8 @@ class LearnPipelineWindow(QMainWindow):
 
         self._stack.addWidget(self._config_page)
         self._stack.addWidget(self._preview_page)
-        self._stack.addWidget(self._anon_page)
         self._stack.addWidget(self._sort_page)
+        self._stack.addWidget(self._anon_page)
         self._stack.addWidget(self._pii_page)
         self._stack.addWidget(self._report_page)
 
@@ -1304,14 +1322,14 @@ class LearnPipelineWindow(QMainWindow):
             self._btn_continue.setText("Continue to Preview")
             self._btn_continue.setEnabled(True)
         elif step == 1:
-            self._btn_continue.setText("Start Anonymisation")
+            self._btn_continue.setText("Start Folder Sort")
             self._btn_continue.setEnabled(True)
         elif step == 2:
-            self._btn_continue.setText("Start Folder Sort")
-            self._btn_continue.setEnabled(False)  # enabled after anon completes
+            self._btn_continue.setText("Start Anonymisation")
+            self._btn_continue.setEnabled(False)  # enabled after sort completes
         elif step == 3:
             self._btn_continue.setText("Run PII Verification")
-            self._btn_continue.setEnabled(False)  # enabled after sort completes
+            self._btn_continue.setEnabled(False)  # enabled after anon completes
         elif step == 4:
             self._btn_continue.setText("Generate CBCT Report")
             self._btn_continue.setEnabled(False)  # enabled after PII check completes
@@ -1328,9 +1346,9 @@ class LearnPipelineWindow(QMainWindow):
         if step == 0:
             self._submit_config()
         elif step == 1:
-            self._start_anonymise()
-        elif step == 2:
             self._start_folder_sort()
+        elif step == 2:
+            self._start_anonymise()
         elif step == 3:
             self._start_pii_check()
         elif step == 4:
@@ -1391,8 +1409,8 @@ class LearnPipelineWindow(QMainWindow):
     # -- Step 3: Anonymise --
 
     def _start_anonymise(self):
-        self._completed_steps.add(1)
-        self._go_to_step(2)
+        self._completed_steps.add(2)
+        self._go_to_step(3)
         self._anon_page.reset()
 
         # Attach log handler
@@ -1425,7 +1443,19 @@ class LearnPipelineWindow(QMainWindow):
             str(errors), "Errors", "#ef4444" if errors > 0 else "#6c63ff"
         )
 
-        self._completed_steps.add(2)
+        # Copy anonymised plans into the LEARN structure (created by prior folder sort)
+        if self._anon_dirs and self._mapper:
+            try:
+                self._mapper.copy_anonymised_plans(
+                    anon_ct_dir=Path(self._anon_dirs["ct"]) if self._anon_dirs.get("ct") else None,
+                    anon_plan_dir=Path(self._anon_dirs["plan"]) if self._anon_dirs.get("plan") else None,
+                    anon_struct_dir=Path(self._anon_dirs["structures"]) if self._anon_dirs.get("structures") else None,
+                    anon_dose_dir=Path(self._anon_dirs["dose"]) if self._anon_dirs.get("dose") else None,
+                )
+            except Exception:
+                logger.exception("Failed to copy anonymised plans to LEARN structure")
+
+        self._completed_steps.add(3)
         self._btn_continue.setEnabled(True)
         self._active_worker = None
 
@@ -1437,8 +1467,8 @@ class LearnPipelineWindow(QMainWindow):
     # -- Step 4: Folder Sort --
 
     def _start_folder_sort(self):
-        self._completed_steps.add(2)
-        self._go_to_step(3)
+        self._completed_steps.add(1)
+        self._go_to_step(2)
         self._sort_page.reset()
         self._sort_page.set_indeterminate("Running folder sort...")
 
@@ -1465,7 +1495,7 @@ class LearnPipelineWindow(QMainWindow):
         self._sort_page.add_stat(str(fc.get("scan", 0)), "SCAN Files")
         self._sort_page.add_stat(str(fc.get("rps", 0)), "RPS Files")
 
-        self._completed_steps.add(3)
+        self._completed_steps.add(2)
         self._btn_continue.setEnabled(True)
         self._active_worker = None
 

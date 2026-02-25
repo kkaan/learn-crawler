@@ -201,8 +201,8 @@ class LearnFolderMapper:
                 tube_ma=meta.get("ma"),
             )
 
-            # For CBCT/KIM Learning: extract datetime and registration data
-            if session_type in ("cbct", "kim_learning") and enrich:
+            # Extract datetime and registration data (all session types)
+            if enrich:
                 self._enrich_cbct_session(session)
 
             sessions.append(session)
@@ -244,41 +244,64 @@ class LearnFolderMapper:
         dated: list[CBCTSession],
         undated: list[CBCTSession],
     ) -> None:
-        """Assign scan_datetime to MotionView sessions by matching DicomUID prefixes.
+        """Assign scan_datetime to undated sessions by treatment_id and directory proximity.
+
+        Matching strategy (in priority order):
+        1. Same treatment_id → nearest by directory sort position
+        2. No treatment_id match → nearest directory sort position overall
+
+        All sessions share a parent directory; img_* names are sequential UIDs
+        so alphabetical proximity correlates with temporal proximity.
 
         Mutates undated sessions in place.
         """
         if not dated or not undated:
             return
 
+        # Build a sorted directory index for proximity lookups
+        all_sessions = dated + undated
+        sorted_names = sorted(s.img_dir.name for s in all_sessions)
+        name_to_pos = {name: i for i, name in enumerate(sorted_names)}
+
+        # Build lookup: treatment_id → list of dated sessions
+        by_treatment: dict[str, list[CBCTSession]] = {}
+        for d in dated:
+            tid = d.treatment_id.strip()
+            if tid:
+                by_treatment.setdefault(tid, []).append(d)
+
         for mv_session in undated:
             best_match: Optional[CBCTSession] = None
-            best_prefix_len = 0
+            mv_pos = name_to_pos.get(mv_session.img_dir.name, 0)
 
-            for d_session in dated:
-                # Find longest common prefix between DicomUIDs
-                prefix_len = 0
-                for a, b in zip(mv_session.dicom_uid, d_session.dicom_uid):
-                    if a == b:
-                        prefix_len += 1
-                    else:
-                        break
+            # Strategy 1: match by treatment_id, pick nearest directory
+            tid = mv_session.treatment_id.strip()
+            candidates = by_treatment.get(tid, []) if tid else []
+            if candidates:
+                best_match = min(
+                    candidates,
+                    key=lambda d: abs(name_to_pos.get(d.img_dir.name, 0) - mv_pos),
+                )
 
-                if prefix_len > best_prefix_len:
-                    best_prefix_len = prefix_len
-                    best_match = d_session
+            # Strategy 2: fallback to nearest directory overall
+            if best_match is None:
+                best_match = min(
+                    dated,
+                    key=lambda d: abs(name_to_pos.get(d.img_dir.name, 0) - mv_pos),
+                )
 
             if best_match and best_match.scan_datetime:
                 mv_session.scan_datetime = best_match.scan_datetime
                 logger.info(
-                    "Matched MotionView %s to dated session %s (prefix=%d)",
+                    "Matched undated session %s → %s (treatment=%s, date=%s)",
                     mv_session.img_dir.name,
                     best_match.img_dir.name,
-                    best_prefix_len,
+                    best_match.treatment_id,
+                    best_match.scan_datetime.strftime("%Y-%m-%d"),
                 )
             else:
                 logger.warning(
-                    "Could not match MotionView session %s to any dated session",
+                    "Could not match undated session %s to any dated session",
                     mv_session.img_dir.name,
                 )
 
