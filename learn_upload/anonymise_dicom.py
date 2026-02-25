@@ -14,6 +14,7 @@ import pydicom
 from pydicom.valuerep import PersonName
 
 from learn_upload.config import DICOM_TAGS_REPLACE, DICOM_TAGS_CLEAR
+from learn_upload.utils import normalize_windows_path
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class DicomAnonymiser:
 
         Returns the path of the written output file.
         """
-        dcm = pydicom.dcmread(dcm_path)
+        dcm = pydicom.dcmread(normalize_windows_path(dcm_path))
 
         # Capture original PatientID before replacing — used for scrubbing
         original_patient_id = str(getattr(dcm, "PatientID", ""))
@@ -88,7 +89,7 @@ class DicomAnonymiser:
         output_path = self.output_dir / relative.parent / anon_name
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        dcm.save_as(output_path)
+        dcm.save_as(normalize_windows_path(output_path))
         logger.info("Anonymised %s -> %s", dcm_path.name, output_path)
         return output_path
 
@@ -113,7 +114,10 @@ class DicomAnonymiser:
         seen: set[Path] = set()
         unique: list[Path] = []
         for f in files:
-            resolved = f.resolve()
+            try:
+                resolved = f.resolve()
+            except OSError:
+                resolved = f
             if resolved not in seen:
                 seen.add(resolved)
                 unique.append(f)
