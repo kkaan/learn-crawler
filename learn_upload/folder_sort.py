@@ -646,6 +646,7 @@ class LearnFolderMapper:
         centroid_path: Path = None,
         trajectory_base_dir: Path = None,
         dry_run: bool = False,
+        progress_callback=None,
     ) -> dict:
         """Run the full folder mapping pipeline.
 
@@ -711,7 +712,13 @@ class LearnFolderMapper:
             logger.info("Dry run — directories created, no files copied")
             return summary
 
+        def _progress(current: int, total: int, msg: str) -> None:
+            if progress_callback:
+                progress_callback(current, total, msg)
+
         # 6. Copy files
+        total_sessions = len(sessions)
+        completed_sessions = 0
         images_root = site_root / "Patient Images" / self.anon_id
         for fx_label, sessions_in_fx in fraction_map.items():
             fx_path = images_root / fx_label
@@ -723,19 +730,25 @@ class LearnFolderMapper:
 
             for cbct_idx, session in enumerate(cbct_sessions, start=1):
                 cbct_path = fx_path / "CBCT" / f"CBCT{cbct_idx}"
+                _progress(completed_sessions, total_sessions, f"{fx_label}/CBCT{cbct_idx}")
                 counts = self.copy_cbct_files(session, cbct_path)
                 summary["files_copied"]["his"] += counts["his"]
                 summary["files_copied"]["scan"] += counts["scan"]
                 summary["files_copied"]["rps"] += counts["rps"]
                 summary["files_copied"]["frames_xml"] += counts["frames_xml"]
+                completed_sessions += 1
 
             mv_sessions = [
                 s for s in sessions_in_fx if s.session_type == "motionview"
             ]
             for session in mv_sessions:
+                _progress(completed_sessions, total_sessions, f"{fx_label}/KIM-KV")
                 mv_counts = self.copy_motionview_files(session, fx_path)
                 summary["files_copied"]["motionview"] += mv_counts["his"]
                 summary["files_copied"]["frames_xml"] += mv_counts["frames_xml"]
+                completed_sessions += 1
+
+        _progress(total_sessions, total_sessions, "File copy complete")
 
         # 7. Copy anonymised plans
         has_anon = any([anon_ct_dir, anon_plan_dir, anon_struct_dir, anon_dose_dir])
