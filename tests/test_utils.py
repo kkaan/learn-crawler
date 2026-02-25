@@ -11,6 +11,8 @@ from learn_upload.utils import (
     parse_frames_xml,
     parse_scan_datetime,
     parse_couch_shifts,
+    normalize_windows_path,
+    safe_copy2,
 )
 
 
@@ -219,3 +221,19 @@ class TestParseCouchShifts:
             "longitudinal": 0.0,
             "vertical": 0.0,
         }
+
+
+class TestNormalizeWindowsPath:
+    def test_passthrough_on_non_windows(self, tmp_path):
+        sample = tmp_path / "example" / "file.dcm"
+        assert normalize_windows_path(sample) == str(sample)
+
+
+class TestSafeCopy2:
+    def test_copy_success(self, tmp_path):
+        src = tmp_path / "source.txt"
+        src.write_text("data", encoding="utf-8")
+        dest = tmp_path / "dest.txt"
+
+        assert safe_copy2(src, dest) is True
+        assert dest.read_text(encoding="utf-8") == "data"

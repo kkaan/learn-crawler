@@ -17,6 +17,13 @@ python -m pytest tests/ -v
 python -c "from learn_upload.folder_sort import LearnFolderMapper; print('ok')"
 ```
 
+## Network Share Considerations
+
+When running the crawler on network shares (UNC paths), keep in mind:
+- Prefer UNC paths (e.g. `\\server\share\XVI_COLLECTION`) over mapped drives if the process runs as a service account.
+- Deep folder structures can exceed the Windows 260-character limit; the utilities now apply long-path prefixes, but Windows long-path support may still need to be enabled.
+- Copy operations log and skip files if permissions or network errors occur, so review logs for missed files.
+
 ## `learn_upload` Package
 
 The `learn_upload/` package automates the LEARN data transfer pipeline — transferring Elekta XVI CBCT patient data from GC (GenesisCare) to the USYD RDS research drive, replacing manual steps with Python scripts.
@@ -186,4 +193,3 @@ Plan:
 - Validate exported RPS/SRO objects with ground truth phantom measurements
 - Expand the contour alignment tool by ImageX to use the SRO object to align contours to projections
 - Use this to screen whether a patient is suitable for recruitment
-

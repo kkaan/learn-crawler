@@ -11,7 +11,9 @@ treatment_notes, and upload_workflow modules.
 
 import io
 import logging
+import os
 import re
+import shutil
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -21,6 +23,34 @@ from typing import Optional
 from learn_upload.config import RPS_ZIP_TAG
 
 logger = logging.getLogger(__name__)
+
+_WINDOWS_LONG_PATH_PREFIX = "\\\\?\\"
+
+
+def normalize_windows_path(path: Path) -> str:
+    """Return a Windows-safe path string, adding long-path prefixes if needed."""
+    path_str = str(path)
+    if os.name != "nt":
+        return path_str
+    if path_str.startswith(_WINDOWS_LONG_PATH_PREFIX):
+        return path_str
+    if not Path(path_str).is_absolute():
+        return path_str
+    if len(path_str) < 240:
+        return path_str
+    if path_str.startswith("\\\\"):
+        return f"\\\\?\\UNC\\{path_str.lstrip('\\\\')}"
+    return f"{_WINDOWS_LONG_PATH_PREFIX}{path_str}"
+
+
+def safe_copy2(src: Path, dst: Path) -> bool:
+    """Copy a file with logging, returning True on success."""
+    try:
+        shutil.copy2(normalize_windows_path(src), normalize_windows_path(dst))
+    except (OSError, PermissionError) as exc:
+        logger.error("Failed to copy %s -> %s: %s", src, dst, exc)
+        return False
+    return True
 
 # ---------------------------------------------------------------------------
 # Plain INI parsing  (Reconstruction/*.INI files)
@@ -253,7 +283,7 @@ def extract_ini_from_rps(dcm_path: Path) -> Optional[str]:
         return None
 
     try:
-        dcm = pydicom.dcmread(str(dcm_path))
+        dcm = pydicom.dcmread(normalize_windows_path(dcm_path))
     except Exception as exc:
         logger.error("Failed to read DICOM %s: %s", dcm_path, exc)
         return None

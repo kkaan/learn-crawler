@@ -10,7 +10,6 @@ Automates the manual SOP steps of:
 
 import logging
 import re
-import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -21,10 +20,12 @@ import pydicom
 from learn_upload.anonymise_dicom import DicomAnonymiser
 from learn_upload.utils import (
     extract_ini_from_rps,
+    normalize_windows_path,
     parse_couch_shifts,
     parse_frames_xml,
     parse_scan_datetime,
     parse_xvi_ini,
+    safe_copy2,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,14 +134,20 @@ class LearnFolderMapper:
         seen: set[Path] = set()
         unique: list[Path] = []
         for f in all_dcm:
-            resolved = f.resolve()
+            try:
+                resolved = f.resolve()
+            except OSError:
+                resolved = f
             if resolved not in seen:
                 seen.add(resolved)
                 unique.append(f)
 
         for dcm_path in unique:
             try:
-                ds = pydicom.dcmread(dcm_path, stop_before_pixels=True)
+                ds = pydicom.dcmread(
+                    normalize_windows_path(dcm_path),
+                    stop_before_pixels=True,
+                )
                 modality = getattr(ds, "Modality", None) or ""
             except Exception:
                 logger.warning("Could not read DICOM file: %s", dcm_path)
@@ -423,8 +430,8 @@ class LearnFolderMapper:
         ips_dir = cbct_path / "CBCT Projections" / "IPS"
         ips_dir.mkdir(parents=True, exist_ok=True)
         for his_file in sorted(session.img_dir.glob("*.his")):
-            shutil.copy2(his_file, ips_dir / his_file.name)
-            counts["his"] += 1
+            if safe_copy2(his_file, ips_dir / his_file.name):
+                counts["his"] += 1
 
         # _Frames.xml → CBCT Projections/IPS/_Frames.xml (anonymised)
         frames_xml = session.img_dir / "_Frames.xml"
@@ -443,8 +450,8 @@ class LearnFolderMapper:
         if recon_src.is_dir():
             for scan_file in sorted(recon_src.iterdir()):
                 if ".SCAN" in scan_file.name.upper():
-                    shutil.copy2(scan_file, recon_dest / scan_file.name)
-                    counts["scan"] += 1
+                    if safe_copy2(scan_file, recon_dest / scan_file.name):
+                        counts["scan"] += 1
 
         # RPS → Registration file/ (anonymised)
         if session.rps_path and session.rps_path.exists():
@@ -471,8 +478,8 @@ class LearnFolderMapper:
         dest.mkdir(parents=True, exist_ok=True)
         counts = {"his": 0, "frames_xml": 0}
         for his_file in sorted(session.img_dir.glob("*.his")):
-            shutil.copy2(his_file, dest / his_file.name)
-            counts["his"] += 1
+            if safe_copy2(his_file, dest / his_file.name):
+                counts["his"] += 1
 
         # _Frames.xml → KIM-KV/{img_dir}/_Frames.xml (anonymised)
         frames_xml = session.img_dir / "_Frames.xml"
@@ -523,8 +530,8 @@ class LearnFolderMapper:
             dest.mkdir(parents=True, exist_ok=True)
             for f in sorted(src_dir.rglob("*")):
                 if f.is_file():
-                    shutil.copy2(f, dest / f.name)
-                    counts[count_key] += 1
+                    if safe_copy2(f, dest / f.name):
+                        counts[count_key] += 1
 
         return counts
 
@@ -629,8 +636,8 @@ class LearnFolderMapper:
                 elif f.name.lower() in (
                     "couchshifts.txt", "covoutput.txt", "rotation.txt",
                 ):
-                    shutil.copy2(f, dest_traj / f.name)
-                    counts["files_copied"] += 1
+                    if safe_copy2(f, dest_traj / f.name):
+                        counts["files_copied"] += 1
 
         logger.info("Trajectory logs copied: %s", counts)
         return counts
