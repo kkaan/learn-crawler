@@ -262,28 +262,21 @@ class DiscoveryWorker(QThread):
         try:
             self.progress.emit("Discovering sessions...")
             sessions = self.mapper.discover_sessions(enrich=True)
-            self.progress.emit("Assigning fractions...")
-            fraction_map = self.mapper.assign_fractions(sessions)
 
-            fractions = {}
-            for fx_label, fx_sessions in fraction_map.items():
-                fractions[fx_label] = []
-                for s in fx_sessions:
-                    d = asdict(s)
-                    for key, val in d.items():
-                        if isinstance(val, Path):
-                            d[key] = str(val)
-                        elif isinstance(val, datetime):
-                            d[key] = val.isoformat()
-                    fractions[fx_label].append(d)
+            serialized = []
+            for s in sessions:
+                d = asdict(s)
+                for key, val in d.items():
+                    if isinstance(val, Path):
+                        d[key] = str(val)
+                    elif isinstance(val, datetime):
+                        d[key] = val.isoformat()
+                serialized.append(d)
 
             self.finished.emit({
                 "ok": True,
                 "session_count": len(sessions),
-                "fraction_count": len(fraction_map),
-                "fractions": fractions,
-                "sessions": sessions,
-                "fraction_map": fraction_map,
+                "sessions": serialized,
             })
         except Exception as exc:
             logger.exception("Discovery failed")
@@ -373,7 +366,7 @@ class AnonymiseWorker(QThread):
 
 
 class FolderSortWorker(QThread):
-    progress = pyqtSignal(str)
+    progress = pyqtSignal(int, int, str)  # current, total, description
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
@@ -386,8 +379,6 @@ class FolderSortWorker(QThread):
     def run(self):
         cfg = self.config
         try:
-            self.progress.emit("Starting folder sort...")
-
             centroid_path = cfg.get("centroid_path", "")
             trajectory_dir = cfg.get("trajectory_dir", "")
             dry_run = cfg.get("dry_run", False)
@@ -400,6 +391,7 @@ class FolderSortWorker(QThread):
                 centroid_path=Path(centroid_path) if centroid_path else None,
                 trajectory_base_dir=Path(trajectory_dir) if trajectory_dir else None,
                 dry_run=dry_run,
+                progress_callback=lambda cur, tot, msg: self.progress.emit(cur, tot, msg),
             )
             self.finished.emit(summary)
         except Exception as exc:
@@ -430,8 +422,7 @@ class PiiCheckWorker(QThread):
 
             output_base = Path(cfg["output_path"])
             site_name = cfg["site_name"].strip()
-            anon_id = cfg["anon_id"].strip()
-            scan_dir = output_base / site_name / "Patient Plans" / anon_id
+            scan_dir = output_base / site_name
 
             if not scan_dir.is_dir():
                 scan_dir = output_base
@@ -524,7 +515,9 @@ def _esc(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 class StepIndicator(QWidget):
-    """A single step label in the left sidebar."""
+    """A single step label in the left sidebar. Clickable when completed."""
+
+    clicked = pyqtSignal(int)  # emits step index when clicked
 
     def __init__(self, number: int, label: str, parent=None):
         super().__init__(parent)
@@ -549,9 +542,15 @@ class StepIndicator(QWidget):
 
         self.set_state("future")
 
+    def mousePressEvent(self, event):
+        if self._state == "completed":
+            self.clicked.emit(self.number - 1)  # 0-indexed step
+        super().mousePressEvent(event)
+
     def set_state(self, state: str):
         self._state = state
         if state == "active":
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             self.setStyleSheet(
                 "background: rgba(108, 99, 255, 0.08); "
                 "border-left: 3px solid #6c63ff;"
@@ -563,6 +562,7 @@ class StepIndicator(QWidget):
             self.label.setStyleSheet("color: #e2e8f0; font-weight: bold;")
         elif state == "completed":
             self.setStyleSheet("background: transparent; border-left: 3px solid transparent;")
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.circle.setStyleSheet(
                 "background-color: #22c55e; color: #ffffff; "
                 "border-radius: 14px; font-weight: bold;"
@@ -570,6 +570,7 @@ class StepIndicator(QWidget):
             self.circle.setText("\u2713")
             self.label.setStyleSheet("color: #94a3b8;")
         else:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             self.setStyleSheet("background: transparent; border-left: 3px solid transparent;")
             self.circle.setStyleSheet(
                 "background-color: transparent; color: #5c6578; "
@@ -776,9 +777,9 @@ class PreviewPage(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "Fraction", "Type", "Directory", "Datetime",
+            "Type", "Directory", "Datetime",
             "Treatment", "kV", "mA", "RPS",
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -810,30 +811,24 @@ class PreviewPage(QWidget):
                 item.widget().deleteLater()
 
         self.stats_layout.addWidget(self._stat_card(str(data["session_count"]), "Sessions"))
-        self.stats_layout.addWidget(self._stat_card(str(data["fraction_count"]), "Fractions"))
 
         # Fill table
-        fractions = data.get("fractions", {})
-        total_rows = sum(len(sessions) for sessions in fractions.values())
-        self.table.setRowCount(total_rows)
-        row = 0
-        for fx_label, sessions in fractions.items():
-            for s in sessions:
-                self.table.setItem(row, 0, QTableWidgetItem(fx_label))
-                self.table.setItem(row, 1, QTableWidgetItem(s.get("session_type", "")))
-                img_dir = s.get("img_dir", "")
-                dir_name = Path(img_dir).name if img_dir else ""
-                self.table.setItem(row, 2, QTableWidgetItem(dir_name))
-                dt = s.get("scan_datetime")
-                dt_str = str(dt).replace("T", " ")[:19] if dt else "-"
-                self.table.setItem(row, 3, QTableWidgetItem(dt_str))
-                self.table.setItem(row, 4, QTableWidgetItem(s.get("treatment_id") or "-"))
-                kv = s.get("tube_kv")
-                self.table.setItem(row, 5, QTableWidgetItem(str(kv) if kv is not None else "-"))
-                ma = s.get("tube_ma")
-                self.table.setItem(row, 6, QTableWidgetItem(str(ma) if ma is not None else "-"))
-                self.table.setItem(row, 7, QTableWidgetItem("Yes" if s.get("has_rps") else "-"))
-                row += 1
+        sessions = data.get("sessions", [])
+        self.table.setRowCount(len(sessions))
+        for row, s in enumerate(sessions):
+            self.table.setItem(row, 0, QTableWidgetItem(s.get("session_type", "")))
+            img_dir = s.get("img_dir", "")
+            dir_name = Path(img_dir).name if img_dir else ""
+            self.table.setItem(row, 1, QTableWidgetItem(dir_name))
+            dt = s.get("scan_datetime")
+            dt_str = str(dt).replace("T", " ")[:19] if dt else "-"
+            self.table.setItem(row, 2, QTableWidgetItem(dt_str))
+            self.table.setItem(row, 3, QTableWidgetItem(s.get("treatment_id") or "-"))
+            kv = s.get("tube_kv")
+            self.table.setItem(row, 4, QTableWidgetItem(str(kv) if kv is not None else "-"))
+            ma = s.get("tube_ma")
+            self.table.setItem(row, 5, QTableWidgetItem(str(ma) if ma is not None else "-"))
+            self.table.setItem(row, 6, QTableWidgetItem("Yes" if s.get("has_rps") else "-"))
 
     def _stat_card(self, value: str, label: str, color: str = "#6c63ff") -> QFrame:
         card = QFrame()
@@ -1201,6 +1196,7 @@ class LearnPipelineWindow(QMainWindow):
         self._step_indicators: list[StepIndicator] = []
         for i, name in enumerate(self.STEP_NAMES):
             si = StepIndicator(i + 1, name)
+            si.clicked.connect(self._on_step_clicked)
             self._step_indicators.append(si)
             sidebar_layout.addWidget(si)
 
@@ -1318,24 +1314,32 @@ class LearnPipelineWindow(QMainWindow):
         # Update button labels and visibility
         self._btn_back.setVisible(step > 0)
 
+        # If this step is already completed, enable Continue to advance
+        already_done = step in self._completed_steps
+
         if step == 0:
             self._btn_continue.setText("Continue to Preview")
             self._btn_continue.setEnabled(True)
         elif step == 1:
             self._btn_continue.setText("Start Folder Sort")
-            self._btn_continue.setEnabled(True)
+            self._btn_continue.setEnabled(already_done or True)
         elif step == 2:
             self._btn_continue.setText("Start Anonymisation")
-            self._btn_continue.setEnabled(False)  # enabled after sort completes
+            self._btn_continue.setEnabled(already_done)
         elif step == 3:
             self._btn_continue.setText("Run PII Verification")
-            self._btn_continue.setEnabled(False)  # enabled after anon completes
+            self._btn_continue.setEnabled(already_done)
         elif step == 4:
             self._btn_continue.setText("Generate CBCT Report")
-            self._btn_continue.setEnabled(False)  # enabled after PII check completes
+            self._btn_continue.setEnabled(already_done)
         elif step == 5:
             self._btn_continue.setText("New Patient")
-            self._btn_continue.setEnabled(False)  # enabled after report completes
+            self._btn_continue.setEnabled(already_done)
+
+    def _on_step_clicked(self, step: int):
+        """Navigate to a completed step for review."""
+        if step in self._completed_steps:
+            self._go_to_step(step)
 
     def _on_back(self):
         if self._current_step > 0:
@@ -1343,6 +1347,10 @@ class LearnPipelineWindow(QMainWindow):
 
     def _on_continue(self):
         step = self._current_step
+        # If step is already completed, just advance to next step
+        if step in self._completed_steps and step < 5:
+            self._go_to_step(step + 1)
+            return
         if step == 0:
             self._submit_config()
         elif step == 1:
@@ -1476,7 +1484,7 @@ class LearnPipelineWindow(QMainWindow):
 
         worker = FolderSortWorker(self._mapper, self._config, self._anon_dirs)
         worker.progress.connect(
-            lambda msg: self._sort_page.progress_label.setText(msg)
+            lambda cur, tot, msg: self._sort_page.set_progress(cur, tot, msg)
         )
         worker.finished.connect(self._on_sort_done)
         worker.error.connect(self._on_sort_error)
