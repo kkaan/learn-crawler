@@ -437,6 +437,35 @@ class TestCopyCbctFiles:
         ips_files = list((cbct_path / "CBCT Projections" / "IPS").glob("*.his"))
         assert len(ips_files) == 3
 
+    def test_ini_files_copied(self, tmp_path):
+        """INI and INI.XVI files from Reconstruction/ copied to Reconstructed CBCT/."""
+        patient_dir = _make_xvi_session(tmp_path, "img_ini", num_his=1)
+        img_dir = patient_dir / "IMAGES" / "img_ini"
+        recon_dir = img_dir / "Reconstruction"
+        # _make_xvi_session already creates recon.INI — add an .INI.XVI too
+        (recon_dir / "recon.INI.XVI").write_text("xvi config", encoding="utf-8")
+
+        session = CBCTSession(
+            img_dir=img_dir,
+            dicom_uid="uid_ini",
+            acquisition_preset="4ee Pelvis",
+            session_type="cbct",
+            treatment_id="Prostate",
+            has_rps=False,
+            rps_path=None,
+        )
+
+        cbct_path = tmp_path / "dest" / "CBCT1"
+        cbct_path.mkdir(parents=True)
+
+        mapper = LearnFolderMapper(patient_dir, "PAT01", "Prostate", tmp_path / "out")
+        counts = mapper.copy_cbct_files(session, cbct_path)
+
+        assert counts["ini"] == 2  # .INI + .INI.XVI
+        recon_dest = cbct_path / "Reconstructed CBCT"
+        assert (recon_dest / "recon.INI").exists()
+        assert (recon_dest / "recon.INI.XVI").exists()
+
 
 # ---------------------------------------------------------------------------
 # copy_motionview_files
@@ -608,7 +637,7 @@ class TestExecute:
 
 class TestFramesXmlCopied:
     def test_frames_xml_copied_with_cbct(self, tmp_path):
-        """_Frames.xml anonymised and placed in IPS/ alongside .his files."""
+        """_Frames.xml raw-copied to IPS/ alongside .his files (no anonymisation)."""
         patient_dir = tmp_path / "patient_12345678"
         images_dir = patient_dir / "IMAGES" / "img_001"
         images_dir.mkdir(parents=True)
@@ -645,15 +674,15 @@ class TestFramesXmlCopied:
         output_xml = cbct_path / "CBCT Projections" / "IPS" / "_Frames.xml"
         assert output_xml.exists()
 
-        # Verify PII removed
+        # Raw copy — original PII should still be present (anonymise step handles it)
         tree = ET.parse(output_xml)
         root = tree.getroot()
         patient = root.find("Patient")
-        assert patient.find("ID").text == "PRIME001"
-        assert patient.find("LastName").text == "PRIME001"
+        assert patient.find("ID").text == "12345678"
+        assert patient.find("FirstName").text == "JOHN"
 
     def test_frames_xml_copied_with_motionview(self, tmp_path):
-        """_Frames.xml anonymised and placed in KIM-KV/{img_dir}/."""
+        """_Frames.xml raw-copied to KIM-KV/{img_dir}/ (no anonymisation)."""
         patient_dir = tmp_path / "patient_12345678"
         images_dir = patient_dir / "IMAGES" / "img_mv01"
         images_dir.mkdir(parents=True)
@@ -688,11 +717,12 @@ class TestFramesXmlCopied:
         output_xml = fx_path / "KIM-KV" / "img_mv01" / "_Frames.xml"
         assert output_xml.exists()
 
+        # Raw copy — original PII still present
         tree = ET.parse(output_xml)
         root = tree.getroot()
         patient = root.find("Patient")
-        assert patient.find("ID").text == "PRIME001"
-        assert "12345678" not in output_xml.read_text(encoding="utf-8")
+        assert patient.find("ID").text == "12345678"
+        assert "12345678" in output_xml.read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -701,7 +731,7 @@ class TestFramesXmlCopied:
 
 class TestCopyCentroidFile:
     def test_copy_centroid_file(self, tmp_path):
-        """MRN and patient name replaced; file placed in Patient Files/."""
+        """Centroid file raw-copied to Patient Files/ (no anonymisation)."""
         patient_dir = tmp_path / "patient_12345678"
         patient_dir.mkdir()
 
@@ -712,16 +742,15 @@ class TestCopyCentroidFile:
         result = mapper.copy_centroid_file(centroid)
 
         assert result.exists()
-        assert result.name == "Centroid_PRIME001.txt"
+        # Raw copy — original filename preserved
+        assert result.name == "Centroid_12345678.txt"
         assert result.parent == tmp_path / "out" / "Prostate" / "Patient Files" / "PRIME001"
 
         text = result.read_text(encoding="utf-8")
         lines = text.splitlines()
-        assert lines[0] == "PRIME001"
-        assert lines[1] == "PRIME001"
-        assert "12345678" not in text
-        assert "SMITH" not in text
-        # Data lines preserved
+        # Raw copy — PII still present
+        assert lines[0] == "12345678"
+        assert lines[1] == "SMITH JOHN"
         assert lines[2] == "1.23 4.56 7.89"
 
 
@@ -779,8 +808,8 @@ class TestCopyTrajectoryLogs:
             treat_dest = out / "Prostate" / "Trajectory Logs" / "PRIME001" / fx / "Treatment Records"
             assert treat_dest.is_dir()
 
-    def test_trajectory_marker_locations_scrubbed(self, tmp_path):
-        """patient_12345678 replaced with patient_PRIME001 in MarkerLocations."""
+    def test_trajectory_marker_locations_raw_copy(self, tmp_path):
+        """MarkerLocations copied raw — PII still present (anonymise step handles it)."""
         patient_dir, traj_base = self._setup_trajectory(tmp_path)
         out = tmp_path / "out"
 
@@ -792,8 +821,8 @@ class TestCopyTrajectoryLogs:
             / "FX01" / "Trajectory Logs" / "MarkerLocations.txt"
         )
         text = ml_path.read_text(encoding="utf-8")
-        assert "patient_12345678" not in text
-        assert "patient_PRIME001" in text
+        # Raw copy — original MRN still present
+        assert "patient_12345678" in text
 
     def test_trajectory_no_pii_files_unchanged(self, tmp_path):
         """couchShifts, covOutput, Rotation copied byte-for-byte."""

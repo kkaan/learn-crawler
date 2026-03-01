@@ -1,12 +1,14 @@
 """DICOM anonymisation for LEARN data transfer pipeline.
 
-Replaces the manual MIM anonymisation step in the SOP.  Only TPS data
-(CT_SET/, DICOM_PLAN/) needs anonymisation — XVI projection/CBCT files
-are already anonymised by the system.
+Replaces the manual MIM anonymisation step in the SOP.  Handles all file
+types that may contain patient-identifiable information: DICOM files,
+_Frames.xml, INI configuration files, centroid files, and trajectory logs.
 """
 
 import logging
 import re
+import shutil
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -215,3 +217,250 @@ class DicomAnonymiser:
             summary["anon_id"],
         )
         return summary
+
+
+# ---------------------------------------------------------------------------
+# Standalone anonymisation helpers (operate on already-copied output files)
+# ---------------------------------------------------------------------------
+
+
+def anonymise_ini_file(ini_path: Path, anon_id: str) -> None:
+    """Anonymise an XVI ``.INI`` or ``.INI.XVI`` file in-place.
+
+    Replaces ``PatientID=xxx`` with ``PatientID={anon_id}``,
+    ``FirstName=xxx`` with ``FirstName=``, and
+    ``LastName=xxx`` with ``LastName={anon_id}``.
+    """
+    ini_path = Path(ini_path)
+    text = ini_path.read_text(encoding="utf-8", errors="ignore")
+
+    text = re.sub(r"(?m)^PatientID=.*$", f"PatientID={anon_id}", text)
+    text = re.sub(r"(?m)^FirstName=.*$", "FirstName=", text)
+    text = re.sub(r"(?m)^LastName=.*$", f"LastName={anon_id}", text)
+
+    ini_path.write_text(text, encoding="utf-8")
+    logger.info("Anonymised INI %s", ini_path)
+
+
+def anonymise_centroid_file(file_path: Path, anon_id: str) -> Path:
+    """Anonymise a centroid file in-place.
+
+    Lines 1 and 2 contain MRN and patient name; both are replaced with
+    *anon_id*.  The MRN portion of the filename is also replaced.
+
+    Returns the (possibly renamed) output path.
+    """
+    file_path = Path(file_path)
+    lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines(
+        keepends=True
+    )
+
+    original_id = lines[0].strip() if lines else ""
+
+    if len(lines) >= 1:
+        lines[0] = anon_id + "\n"
+    if len(lines) >= 2:
+        lines[1] = anon_id + "\n"
+
+    file_path.write_text("".join(lines), encoding="utf-8")
+
+    # Rename file if MRN appears in the filename
+    if original_id and original_id in file_path.name:
+        new_name = file_path.name.replace(original_id, anon_id)
+        new_path = file_path.parent / new_name
+        file_path.rename(new_path)
+        logger.info("Anonymised centroid %s -> %s", file_path.name, new_path.name)
+        return new_path
+
+    logger.info("Anonymised centroid %s", file_path)
+    return file_path
+
+
+def anonymise_trajectory_log(file_path: Path, original_id: str, anon_id: str) -> None:
+    """Anonymise a trajectory log file in-place.
+
+    Replaces ``patient_{original_id}`` with ``patient_{anon_id}`` in
+    the file text (used for MarkerLocations*.txt files).
+    """
+    file_path = Path(file_path)
+    text = file_path.read_text(encoding="utf-8", errors="ignore")
+
+    if original_id:
+        text = text.replace(f"patient_{original_id}", f"patient_{anon_id}")
+
+    file_path.write_text(text, encoding="utf-8")
+    logger.info("Anonymised trajectory log %s", file_path)
+
+
+def anonymise_output_folder(
+    output_dir: Path,
+    anon_id: str,
+    site_name: str,
+    patient_dir: Path,
+    tps_path: Path = None,
+    progress_callback=None,
+) -> dict:
+    """Scan an entire output folder and anonymise all files in-place.
+
+    This is the main entry point for the anonymisation step, called after
+    folder sort has copied raw files into the LEARN directory structure.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Base output directory (contains *site_name*/ subtree).
+    anon_id : str
+        Anonymised patient identifier (e.g. ``PAT01``).
+    site_name : str
+        Site/treatment name (e.g. ``Prostate``).
+    patient_dir : Path
+        Original XVI patient directory (for extracting original MRN).
+    tps_path : Path, optional
+        TPS export directory.  If provided, DICOM files are imported and
+        anonymised into Patient Plans/.
+    progress_callback : callable, optional
+        ``callback(current, total, filename)`` for progress reporting.
+
+    Returns
+    -------
+    dict
+        Summary: ``{"dcm": N, "xml": M, "ini": P, "centroid": Q,
+        "trajectory": R, "tps_imported": S, "errors": E}``.
+    """
+    output_dir = Path(output_dir)
+    patient_dir = Path(patient_dir)
+    site_root = output_dir / site_name
+
+    # Detect original patient ID from source directory name
+    patient_dir_name = patient_dir.name
+    original_id = ""
+    if patient_dir_name.lower().startswith("patient_"):
+        original_id = patient_dir_name[len("patient_"):]
+
+    counts = {
+        "dcm": 0, "xml": 0, "ini": 0, "centroid": 0,
+        "trajectory": 0, "tps_imported": 0, "errors": 0,
+    }
+
+    # --- Phase 1: Collect all files to process ---
+    files_to_process: list[Path] = []
+    if site_root.is_dir():
+        for f in site_root.rglob("*"):
+            if f.is_file():
+                files_to_process.append(f)
+
+    total = len(files_to_process)
+    processed = 0
+    last_emit = 0.0
+
+    def _progress(filename: str) -> None:
+        nonlocal processed, last_emit
+        processed += 1
+        if progress_callback:
+            now = time.monotonic()
+            if now - last_emit >= 0.2 or processed % 10 == 0 or processed == total:
+                progress_callback(processed, total, filename)
+                last_emit = now
+
+    # --- Phase 2: Walk and anonymise ---
+    # Build a DicomAnonymiser that writes in-place (output_dir == source)
+    anon = DicomAnonymiser(
+        patient_dir=patient_dir,
+        anon_id=anon_id,
+        output_dir=site_root,
+        site_name=site_name,
+    )
+
+    for file_path in sorted(files_to_process):
+        name_lower = file_path.name.lower()
+
+        try:
+            if name_lower == "_frames.xml":
+                anon.anonymise_frames_xml(file_path, file_path)
+                counts["xml"] += 1
+
+            elif name_lower.endswith((".ini", ".ini.xvi")):
+                anonymise_ini_file(file_path, anon_id)
+                counts["ini"] += 1
+
+            elif name_lower.endswith(".dcm"):
+                # In-place: read, anonymise, overwrite
+                dcm = pydicom.dcmread(file_path)
+                original_patient_id = str(getattr(dcm, "PatientID", ""))
+
+                for tag in DICOM_TAGS_REPLACE:
+                    if tag == (0x0010, 0x0010):  # PatientName
+                        dcm[tag].value = PersonName(f"{anon_id}^{site_name}")
+                    else:
+                        dcm[tag].value = anon_id
+
+                for tag in DICOM_TAGS_CLEAR:
+                    if tag in dcm:
+                        dcm[tag].value = ""
+
+                if original_patient_id and hasattr(dcm, "StudyDescription"):
+                    dcm.StudyDescription = dcm.StudyDescription.replace(
+                        original_patient_id, anon_id
+                    )
+
+                dcm.save_as(file_path)
+                counts["dcm"] += 1
+
+            elif name_lower.startswith("markerlocations") and name_lower.endswith(".txt"):
+                anonymise_trajectory_log(file_path, original_id, anon_id)
+                counts["trajectory"] += 1
+
+            elif "patient files" in str(file_path.parent).lower() and name_lower.endswith(".txt"):
+                # Centroid files live in Patient Files/{anon_id}/
+                anonymise_centroid_file(file_path, anon_id)
+                counts["centroid"] += 1
+
+            # .his and .SCAN — skip (binary data)
+
+        except Exception:
+            logger.exception("Failed to anonymise %s", file_path)
+            counts["errors"] += 1
+
+        _progress(file_path.name)
+
+    # --- Phase 3: TPS import (if provided) ---
+    if tps_path:
+        tps_path = Path(tps_path)
+        if tps_path.is_dir():
+            plans_root = site_root / "Patient Plans" / anon_id
+            tps_categories = {
+                "DICOM CT Images": "CT",
+                "DICOM RT Plan": "Plan",
+                "DICOM RT Structures": "Structure Set",
+                "DICOM RT Dose": "Dose",
+            }
+
+            # Count TPS files for progress update
+            tps_files: list[tuple[Path, str]] = []
+            for src_name, dest_name in tps_categories.items():
+                src_dir = tps_path / src_name
+                if src_dir.is_dir():
+                    for dcm_file in sorted(src_dir.rglob("*.dcm")):
+                        tps_files.append((dcm_file, dest_name))
+
+            total += len(tps_files)
+
+            for dcm_file, dest_name in tps_files:
+                dest_dir = plans_root / dest_name
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    tps_anon = DicomAnonymiser(
+                        patient_dir=patient_dir,
+                        anon_id=anon_id,
+                        output_dir=dest_dir,
+                        site_name=site_name,
+                    )
+                    tps_anon.anonymise_file(dcm_file, source_base=dcm_file.parent)
+                    counts["tps_imported"] += 1
+                except Exception:
+                    logger.exception("Failed to anonymise TPS file %s", dcm_file)
+                    counts["errors"] += 1
+                _progress(dcm_file.name)
+
+    logger.info("anonymise_output_folder complete: %s", counts)
+    return counts
