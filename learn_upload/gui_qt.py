@@ -54,7 +54,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from learn_upload.anonymise_dicom import DicomAnonymiser
+from learn_upload.anonymise_dicom import anonymise_output_folder
 from learn_upload.config import DEFAULT_LEARN_OUTPUT, DEFAULT_XVI_BASE, setup_logging
 from learn_upload.folder_sort import LearnFolderMapper
 from learn_upload.verify_pii import verify_no_pii
@@ -295,71 +295,21 @@ class AnonymiseWorker(QThread):
     def run(self):
         cfg = self.config
         try:
-            tps_path = cfg.get("tps_path", "")
-            sp = cfg.get("staging_path", "").strip()
-            staging_dir = Path(sp) if sp else (Path(cfg["output_path"]) / "_staging")
+            output_dir = Path(cfg["output_path"])
+            site_name = cfg["site_name"].strip()
+            anon_id = cfg["anon_id"].strip()
+            patient_dir = Path(cfg["source_path"])
+            tps_path = cfg.get("tps_path", "").strip()
 
-            if not tps_path or not Path(tps_path).is_dir():
-                self.finished.emit({
-                    "ct": 0, "plan": 0, "structures": 0, "dose": 0,
-                    "errors": 0, "skipped": True,
-                    "message": "No TPS export path provided -- skipping.",
-                })
-                return
-
-            tps = Path(tps_path)
-            categories = {
-                "ct": tps / "DICOM CT Images",
-                "plan": tps / "DICOM RT Plan",
-                "structures": tps / "DICOM RT Structures",
-                "dose": tps / "DICOM RT Dose",
-            }
-
-            counts = {"ct": 0, "plan": 0, "structures": 0, "dose": 0, "errors": 0}
-            anon_dirs = {}
-
-            total_files = 0
-            for src in categories.values():
-                if src.is_dir():
-                    total_files += len(list(src.rglob("*.dcm")))
-
-            processed = 0
-            last_emit = 0.0
-
-            for category, source_dir in categories.items():
-                if not source_dir.is_dir():
-                    logger.info("Category %s -- not found, skipping", category)
-                    continue
-
-                cat_staging = staging_dir / category
-                anon = DicomAnonymiser(
-                    patient_dir=Path(cfg["source_path"]),
-                    anon_id=cfg["anon_id"].strip(),
-                    output_dir=cat_staging,
-                    site_name=cfg["site_name"].strip(),
-                )
-
-                dcm_files = list(source_dir.rglob("*.dcm"))
-                for dcm_file in dcm_files:
-                    try:
-                        anon.anonymise_file(dcm_file, source_base=source_dir)
-                        counts[category] += 1
-                    except Exception:
-                        counts["errors"] += 1
-                        logger.exception("Failed to anonymise %s", dcm_file.name)
-                    processed += 1
-
-                    # Throttle: emit at most every 200ms or every 10 files
-                    now = time.monotonic()
-                    if now - last_emit >= 0.2 or processed % 10 == 0 or processed == total_files:
-                        self.progress.emit(processed, total_files, dcm_file.name)
-                        last_emit = now
-
-                anon_dirs[category] = str(cat_staging)
-
-            counts["skipped"] = False
-            counts["anon_dirs"] = anon_dirs
-            self.finished.emit(counts)
+            result = anonymise_output_folder(
+                output_dir=output_dir,
+                anon_id=anon_id,
+                site_name=site_name,
+                patient_dir=patient_dir,
+                tps_path=Path(tps_path) if tps_path else None,
+                progress_callback=lambda cur, tot, name: self.progress.emit(cur, tot, name),
+            )
+            self.finished.emit(result)
         except Exception as exc:
             logger.exception("Anonymisation failed")
             self.error.emit(str(exc))
@@ -370,11 +320,10 @@ class FolderSortWorker(QThread):
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, mapper: LearnFolderMapper, config: dict, anon_dirs: dict):
+    def __init__(self, mapper: LearnFolderMapper, config: dict):
         super().__init__()
         self.mapper = mapper
         self.config = config
-        self.anon_dirs = anon_dirs
 
     def run(self):
         cfg = self.config
@@ -384,10 +333,6 @@ class FolderSortWorker(QThread):
             dry_run = cfg.get("dry_run", False)
 
             summary = self.mapper.execute(
-                anon_ct_dir=Path(self.anon_dirs["ct"]) if self.anon_dirs.get("ct") else None,
-                anon_plan_dir=Path(self.anon_dirs["plan"]) if self.anon_dirs.get("plan") else None,
-                anon_struct_dir=Path(self.anon_dirs["structures"]) if self.anon_dirs.get("structures") else None,
-                anon_dose_dir=Path(self.anon_dirs["dose"]) if self.anon_dirs.get("dose") else None,
                 centroid_path=Path(centroid_path) if centroid_path else None,
                 trajectory_base_dir=Path(trajectory_dir) if trajectory_dir else None,
                 dry_run=dry_run,
@@ -1138,7 +1083,6 @@ class LearnPipelineWindow(QMainWindow):
 
         self._config: dict = {}
         self._mapper: Optional[LearnFolderMapper] = None
-        self._anon_dirs: dict = {}
         self._current_step = 0
         self._completed_steps: set[int] = set()
         self._active_worker: Optional[QThread] = None
@@ -1420,6 +1364,7 @@ class LearnPipelineWindow(QMainWindow):
         self._completed_steps.add(2)
         self._go_to_step(3)
         self._anon_page.reset()
+        self._anon_page.set_indeterminate("Scanning files...")
 
         # Attach log handler
         logging.getLogger().addHandler(self._log_handler_anon)
@@ -1435,33 +1380,17 @@ class LearnPipelineWindow(QMainWindow):
 
     def _on_anon_done(self, data: dict):
         logging.getLogger().removeHandler(self._log_handler_anon)
-        self._anon_dirs = data.get("anon_dirs", {})
 
-        if data.get("skipped"):
-            self._anon_page.set_complete("Skipped (no TPS path)")
-        else:
-            self._anon_page.set_complete("Anonymisation complete")
+        self._anon_page.set_complete("Anonymisation complete")
 
-        self._anon_page.add_stat(str(data.get("ct", 0)), "CT Files")
-        self._anon_page.add_stat(str(data.get("plan", 0)), "Plan Files")
-        self._anon_page.add_stat(str(data.get("structures", 0)), "Struct Files")
-        self._anon_page.add_stat(str(data.get("dose", 0)), "Dose Files")
+        self._anon_page.add_stat(str(data.get("dcm", 0)), "DICOM")
+        self._anon_page.add_stat(str(data.get("xml", 0)), "XML")
+        self._anon_page.add_stat(str(data.get("ini", 0)), "INI")
+        self._anon_page.add_stat(str(data.get("tps_imported", 0)), "TPS Imported")
         errors = data.get("errors", 0)
         self._anon_page.add_stat(
             str(errors), "Errors", "#ef4444" if errors > 0 else "#6c63ff"
         )
-
-        # Copy anonymised plans into the LEARN structure (created by prior folder sort)
-        if self._anon_dirs and self._mapper:
-            try:
-                self._mapper.copy_anonymised_plans(
-                    anon_ct_dir=Path(self._anon_dirs["ct"]) if self._anon_dirs.get("ct") else None,
-                    anon_plan_dir=Path(self._anon_dirs["plan"]) if self._anon_dirs.get("plan") else None,
-                    anon_struct_dir=Path(self._anon_dirs["structures"]) if self._anon_dirs.get("structures") else None,
-                    anon_dose_dir=Path(self._anon_dirs["dose"]) if self._anon_dirs.get("dose") else None,
-                )
-            except Exception:
-                logger.exception("Failed to copy anonymised plans to LEARN structure")
 
         self._completed_steps.add(3)
         self._btn_continue.setEnabled(True)
@@ -1482,7 +1411,7 @@ class LearnPipelineWindow(QMainWindow):
 
         logging.getLogger().addHandler(self._log_handler_sort)
 
-        worker = FolderSortWorker(self._mapper, self._config, self._anon_dirs)
+        worker = FolderSortWorker(self._mapper, self._config)
         worker.progress.connect(
             lambda cur, tot, msg: self._sort_page.set_progress(cur, tot, msg)
         )
@@ -1502,6 +1431,7 @@ class LearnPipelineWindow(QMainWindow):
         self._sort_page.add_stat(str(fc.get("his", 0)), ".his Files")
         self._sort_page.add_stat(str(fc.get("scan", 0)), "SCAN Files")
         self._sort_page.add_stat(str(fc.get("rps", 0)), "RPS Files")
+        self._sort_page.add_stat(str(fc.get("ini", 0)), "INI Files")
 
         self._completed_steps.add(2)
         self._btn_continue.setEnabled(True)
@@ -1580,7 +1510,6 @@ class LearnPipelineWindow(QMainWindow):
     def _reset_for_new_patient(self):
         self._config = {}
         self._mapper = None
-        self._anon_dirs = {}
         self._completed_steps.clear()
         self._go_to_step(0)
 
