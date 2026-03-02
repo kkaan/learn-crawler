@@ -171,27 +171,79 @@ The mapper classifies XVI acquisitions by their `AcquisitionPresetName` in `_Fra
 | KIM Learning | `12aa KIM S20 R 34-181` | Same as CBCT (treated identically) |
 | KIM MotionView | `13a KIM S20 MotionView` | `.his` to `KIM-KV/{img_dirname}/` |
 
-### Output Directory Structure
+### Expected Input: XVI Export Directory
+
+The tool expects an Elekta XVI export with this structure:
 
 ```
-Prostate/
-  Patient Files/PAT01/
-  Patient Images/PAT01/
-    FX0/
+patient_XXXXXXXX/
+  IMAGES/
+    img_<UID>/                     <- one directory per acquisition session
+      _Frames.xml                  <- treatment ID, acquisition preset, kV/mA
+      *.his                        <- raw X-ray projections
+      Reconstruction/
+        *.INI or *.INI.XVI         <- ScanUID (embeds datetime), patient metadata
+        *.SCAN                     <- reconstructed CBCT volume
+        *.SCAN.MACHINEORIENTATION  <- machine orientation metadata
+        *.RPS.dcm                  <- registration DICOM (couch shifts, matrices)
+    img_<UID>/  ...                <- additional sessions
+  CT_SET/                          <- reference CT DICOM (optional, for anonymisation)
+    *.dcm
+  DICOM_PLAN/                      <- treatment plan DICOM (optional, for anonymisation)
+    *.dcm
+```
+
+The `IMAGES/` subdirectory name is configurable (`images_subdir` parameter); the default is `"IMAGES"`.
+
+### Optional Inputs
+
+These are passed via the GUI or Python API when available:
+
+| Input | Description |
+|-------|-------------|
+| **TPS Export directory** | Contains `DICOM CT Images/`, `DICOM RT Plan/`, `DICOM RT Structures/`, `DICOM RT Dose/` subdirectories from Monaco/TPS export |
+| **Trajectory log directory** | Contains `FX01/`, `FX02/`, ... subdirectories with `MarkerLocations*.txt` files |
+| **Centroid file** | Single `.txt` file (e.g. `Centroid_12345678_BeamID_1.1_1.2.txt`); MRN in filename is replaced with anon ID during copy |
+
+### Output: LEARN Directory Structure
+
+```
+<site_name>/                                  e.g. "Prostate"
+  Patient Files/<anon_id>/
+    cbct_shift_report.md                      <- generated CBCT shift report
+    Centroid_<anon_id>_BeamID_*.txt           <- anonymised centroid file (if provided)
+  Patient Images/<anon_id>/
+    FX1/                                      <- fractions numbered chronologically
       CBCT/
-        CBCT1/
-          CBCT Projections/{CDOG, IPS}/    ← .his projection files
-          Reconstructed CBCT/               ← .SCAN volume files
-          Registration file/                ← .RPS.dcm
+        CBCT1/                                <- multiple CBCTs per fraction if same-day
+          CBCT Projections/
+            CDOG/
+            IPS/
+              *.his                           <- projection files
+              _Frames.xml
+          Reconstructed CBCT/
+            *.SCAN                            <- volume files
+            *.INI / *.INI.XVI                 <- metadata
+          Registration file/
+            *.RPS.dcm                         <- registration DICOM
         CBCT2/ ...
-      KIM-KV/{img_dirname}/                <- MotionView .his files
-    FX1/ ...
-  Patient Plans/PAT01/
-    CT/              <- anonymised CT DICOM
-    Plan/            <- anonymised plan DICOM
-    Dose/
-    Structure Set/
-  Ground Truth/PAT01/
+      KIM-KV/                                 <- MotionView sessions (if present)
+        img_<UID>/
+          *.his
+          _Frames.xml
+    FX2/ ...
+  Patient Plans/<anon_id>/
+    CT/                                       <- anonymised CT DICOM
+    Plan/                                     <- anonymised plan DICOM
+    Dose/                                     <- anonymised dose DICOM (if provided)
+    Structure Set/                            <- anonymised structure DICOM (if provided)
+  Ground Truth/<anon_id>/
+  Trajectory Logs/<anon_id>/                  <- only if trajectory logs provided
+    FX01/
+      Trajectory Logs/
+        MarkerLocations*.txt
+      Treatment Records/
+    FX02/ ...
 ```
 
 ## CBCT Shift Analysis
