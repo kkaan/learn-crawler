@@ -7,6 +7,13 @@ Utilities for interrogating and formatting patient CT, CBCT, SRO, structure set,
 ## Quick Start
 
 ```bash
+# Clone the repository (USYD GitHub Enterprise)
+git clone https://github.sydney.edu.au/kkan2243/learn-crawler-elekta.git
+cd learn-crawler-elekta
+
+# Or clone from GitHub.com (public mirror)
+# git clone https://github.com/kkaan/learn-crawler.git
+
 # Install dependencies
 pip install pydicom PyQt6
 
