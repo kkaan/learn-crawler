@@ -1,7 +1,7 @@
 """Run the LEARN pipeline on a patient example.
 
 Usage:
-    python run_patient_example.py
+    python examples/run_patient_example.py
 """
 
 import logging

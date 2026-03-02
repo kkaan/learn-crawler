@@ -22,7 +22,7 @@ import pydicom
 # Import ElektaRPSExtractor from the repo root
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from extract_elekta_rps_matrices import ElektaRPSExtractor
 
 

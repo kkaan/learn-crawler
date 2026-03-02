@@ -180,7 +180,7 @@ The mapping was determined using `cbct-shifts/compare_rps_mosaiq.py`, which pars
 
 ### Method 1: Python with pydicom (Recommended)
 ```python
-from extract_elekta_rps_matrices import ElektaRPSExtractor
+from extract_elekta_rps_matrices import ElektaRPSExtractor  # in scripts/
 
 extractor = ElektaRPSExtractor("rps_file.dcm")
 extractor.extract_all()
@@ -231,4 +231,4 @@ correction_matrix = extractor.get_correction_matrix(0)
 
 **Document Version**: 1.1
 **Date**: 2026-02-24
-**Tool**: extract_elekta_rps_matrices.py, cbct-shifts/compare_rps_mosaiq.py
+**Tool**: scripts/extract_elekta_rps_matrices.py, cbct-shifts/compare_rps_mosaiq.py
