@@ -326,10 +326,10 @@ class TestAssignFractions:
         mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", tmp_path / "out")
         fractions = mapper.assign_fractions([s1, s2, s3])
 
-        assert list(fractions.keys()) == ["FX0", "FX1", "FX2"]
-        assert fractions["FX0"] == [s1]
-        assert fractions["FX1"] == [s2]
-        assert fractions["FX2"] == [s3]
+        assert list(fractions.keys()) == ["FX1", "FX2", "FX3"]
+        assert fractions["FX1"] == [s1]
+        assert fractions["FX2"] == [s2]
+        assert fractions["FX3"] == [s3]
 
     def test_assign_fractions_same_day(self, tmp_path):
         s1 = self._make_session(tmp_path, datetime(2023, 3, 21, 10, 0), name="img_001")
@@ -338,8 +338,8 @@ class TestAssignFractions:
         mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", tmp_path / "out")
         fractions = mapper.assign_fractions([s1, s2])
 
-        assert list(fractions.keys()) == ["FX0"]
-        assert len(fractions["FX0"]) == 2
+        assert list(fractions.keys()) == ["FX1"]
+        assert len(fractions["FX1"]) == 2
 
     def test_assign_fractions_with_motionview(self, tmp_path):
         s1 = self._make_session(tmp_path, datetime(2023, 3, 21, 10, 0), name="img_001")
@@ -351,9 +351,9 @@ class TestAssignFractions:
         mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", tmp_path / "out")
         fractions = mapper.assign_fractions([s1, mv])
 
-        assert "FX0" in fractions
-        assert len(fractions["FX0"]) == 2
-        types = {s.session_type for s in fractions["FX0"]}
+        assert "FX1" in fractions
+        assert len(fractions["FX1"]) == 2
+        types = {s.session_type for s in fractions["FX1"]}
         assert types == {"cbct", "motionview"}
 
 
@@ -380,7 +380,7 @@ class TestCreateLearnStructure:
             scan_datetime=datetime(2023, 3, 21, 14, 0),
         )
 
-        fraction_map = {"FX0": [s1, s2]}
+        fraction_map = {"FX1": [s1, s2]}
         mapper = LearnFolderMapper(tmp_path, "PAT01", "Prostate", tmp_path / "out")
         site_root = mapper.create_learn_structure(fraction_map)
 
@@ -393,13 +393,13 @@ class TestCreateLearnStructure:
         assert (site_root / "Ground Truth" / "PAT01").is_dir()
 
         # Verify fraction structure
-        fx0 = site_root / "Patient Images" / "PAT01" / "FX0"
-        assert (fx0 / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS").is_dir()
-        assert (fx0 / "CBCT" / "CBCT1" / "CBCT Projections" / "CDOG").is_dir()
-        assert (fx0 / "CBCT" / "CBCT1" / "Reconstructed CBCT").is_dir()
-        assert (fx0 / "CBCT" / "CBCT1" / "Registration file").is_dir()
-        assert (fx0 / "CBCT" / "CBCT2" / "CBCT Projections" / "IPS").is_dir()
-        assert (fx0 / "KIM-KV").is_dir()
+        fx1 = site_root / "Patient Images" / "PAT01" / "FX1"
+        assert (fx1 / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS").is_dir()
+        assert (fx1 / "CBCT" / "CBCT1" / "CBCT Projections" / "CDOG").is_dir()
+        assert (fx1 / "CBCT" / "CBCT1" / "Reconstructed CBCT").is_dir()
+        assert (fx1 / "CBCT" / "CBCT1" / "Registration file").is_dir()
+        assert (fx1 / "CBCT" / "CBCT2" / "CBCT Projections" / "IPS").is_dir()
+        assert (fx1 / "KIM-KV").is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -603,9 +603,9 @@ class TestExecute:
         assert summary["sessions"] == 1
         assert summary["fractions"] == 1
         # Dirs should exist
-        assert (out / "Prostate" / "Patient Images" / "PAT01" / "FX0" / "CBCT" / "CBCT1").is_dir()
+        assert (out / "Prostate" / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1").is_dir()
         # No files should be copied
-        ips = out / "Prostate" / "Patient Images" / "PAT01" / "FX0" / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS"
+        ips = out / "Prostate" / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS"
         assert list(ips.glob("*.his")) == []
 
     @patch("learn_upload.folder_sort.extract_ini_from_rps", return_value=None)
@@ -627,7 +627,7 @@ class TestExecute:
         assert summary["files_copied"]["scan"] == 2  # .SCAN + .SCAN.MACHINEORIENTATION
 
         # Verify files actually copied
-        ips = out / "Prostate" / "Patient Images" / "PAT01" / "FX0" / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS"
+        ips = out / "Prostate" / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1" / "CBCT Projections" / "IPS"
         assert len(list(ips.glob("*.his"))) == 4
 
 

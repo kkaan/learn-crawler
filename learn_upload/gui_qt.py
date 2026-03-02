@@ -356,12 +356,23 @@ class PiiCheckWorker(QThread):
         cfg = self.config
         try:
             pii_strings = [s.strip() for s in cfg.get("pii_strings", []) if s.strip()]
+
+            # Auto-detect original MRN from source directory name
+            source_path = cfg.get("source_path", "")
+            if source_path:
+                dir_name = Path(source_path).name
+                if dir_name.lower().startswith("patient_"):
+                    mrn = dir_name[len("patient_"):]
+                    if mrn and mrn not in pii_strings:
+                        pii_strings.append(mrn)
+                        logger.info("Auto-detected MRN '%s' from source path", mrn)
+
             if not pii_strings:
                 self.finished.emit({
                     "passed": True,
+                    "skipped": True,
                     "files_scanned": 0,
                     "findings": [],
-                    "message": "No PII strings configured -- skipping.",
                 })
                 return
 
@@ -960,7 +971,14 @@ class PiiResultPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        if data.get("passed"):
+        if data.get("skipped"):
+            self.banner.setText("SKIPPED -- No PII search strings configured")
+            self.banner.setStyleSheet(
+                "background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; "
+                "border-radius: 6px; padding: 16px; color: #f59e0b; "
+                "font-size: 16px; font-weight: bold;"
+            )
+        elif data.get("passed"):
             self.banner.setText("PASS -- No residual PII detected")
             self.banner.setStyleSheet(
                 "background: rgba(34, 197, 94, 0.1); border: 1px solid #22c55e; "
@@ -1291,8 +1309,10 @@ class LearnPipelineWindow(QMainWindow):
 
     def _on_continue(self):
         step = self._current_step
-        # If step is already completed, just advance to next step
-        if step in self._completed_steps and step < 5:
+        # If both this step AND the next are already completed, just advance
+        # (user is re-visiting a past step).  Otherwise fall through to
+        # actually run the next step's worker.
+        if step in self._completed_steps and (step + 1) in self._completed_steps and step < 5:
             self._go_to_step(step + 1)
             return
         if step == 0:
