@@ -57,10 +57,12 @@ This launches a 6-step wizard:
 
 1. **Configuration** -- set paths, anonymised ID (PATxx), and PII search strings
 2. **Data Preview** -- discover XVI sessions and preview fraction assignments
-3. **Anonymise** -- run DICOM anonymisation with per-file progress
-4. **Folder Sort** -- copy files into the LEARN directory structure
+3. **Folder Sort** -- copy files into the LEARN directory structure
+4. **Anonymise** -- run DICOM anonymisation with per-file progress
 5. **PII Verification** -- scan output for residual patient data
 6. **CBCT Shift Report** -- generate a markdown report of CBCT registration shifts
+
+See the **[GUI Walkthrough](Docs/GUI_Walkthrough.md)** for a step-by-step guide with screenshots.
 
 ### Using the Python API (no GUI)
 
@@ -267,6 +269,7 @@ See [`examples/run_patient_example.py`](examples/run_patient_example.py) for a c
 
 ## Documentation
 
+- **[GUI Walkthrough](Docs/GUI_Walkthrough.md)** -- step-by-step guide to the LEARN Pipeline GUI with screenshots
 - [GC Elekta Patient Upload Process](Docs/GC_Elekta_Patient_Upload_Process.md) -- SOP for patient data transfer to LEARN
 - [LEARN Upload Automation Plan](Docs/LEARN_Upload_Automation_Plan.md) -- full automation plan for the pipeline
 - [Elekta XVI Reconstruction Directory Analysis](Docs/Elekta_XVI_Reconstruction_Directory_Analysis.md) -- directory and file breakdown

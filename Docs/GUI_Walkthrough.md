@@ -13,6 +13,47 @@ The LEARN Pipeline GUI is a 6-step desktop wizard that automates the transfer of
 - Access to the XVI patient export directory (e.g. `\\GC04PRBAK02\elekta_fdt\XVI_COLLECTION\processed\`)
 - A writable output directory for the LEARN folder structure
 
+## Expected Input: XVI Export Directory
+
+The **Source Path** in Step 1 should point to an Elekta XVI patient export with this structure:
+
+```
+patient_XXXXXXXX/
+  XVI Export/                          <- configurable via "Images Subdirectory" field
+    img_<UID>/                         <- one directory per acquisition session
+      _Frames.xml                      <- treatment ID, acquisition preset, kV/mA
+      *.his                            <- raw X-ray projection images
+      Reconstruction/
+        *.INI / *.INI.XVI              <- ScanUID (embeds datetime), tube kV/mA
+        *.SCAN                         <- reconstructed CBCT volume
+        *.SCAN.MACHINEORIENTATION      <- machine orientation metadata
+        *.RPS.dcm                      <- registration DICOM (couch shifts)
+    img_<UID>/ ...                     <- additional sessions
+```
+
+### Optional Input: TPS Export
+
+If a **TPS Export Path** is provided, it should contain subdirectories exported from Monaco or the treatment planning system:
+
+```
+TPS Export/
+  DICOM CT Images/                     <- reference CT slices
+  DICOM RT Plan/                       <- treatment plan DICOM
+  DICOM RT Structures/                 <- structure set DICOM
+  DICOM RT Dose/                       <- dose distribution DICOM
+```
+
+### Optional Input: Trajectory Logs
+
+If a **Trajectory Logs Dir** is provided, it should contain fraction-numbered subdirectories:
+
+```
+Trajectory_Logs/
+  FX01/
+    MarkerLocations*.txt               <- KIM marker tracking data
+  FX02/ ...
+```
+
 ## Launching the GUI
 
 ```bash
