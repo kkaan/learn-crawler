@@ -532,7 +532,7 @@ class LearnFolderMapper:
         output_path = dest_dir / centroid_path.name
 
         shutil.copy2(centroid_path, output_path)
-        logger.info("Copied centroid %s -> %s", centroid_path, output_path)
+        logger.info("Copied centroid -> %s", output_path.name)
         return output_path
 
     # ----- Trajectory logs -----
