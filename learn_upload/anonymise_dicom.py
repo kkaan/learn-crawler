@@ -269,7 +269,7 @@ def anonymise_centroid_file(file_path: Path, anon_id: str) -> Path:
         new_name = file_path.name.replace(original_id, anon_id)
         new_path = file_path.parent / new_name
         file_path.rename(new_path)
-        logger.info("Anonymised centroid %s -> %s", file_path.name, new_path.name)
+        logger.info("Anonymised centroid -> %s", new_path.name)
         return new_path
 
     logger.info("Anonymised centroid %s", file_path)
