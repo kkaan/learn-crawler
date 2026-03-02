@@ -70,25 +70,18 @@ The registration results applied and shifted to and from that fraction's CBCT is
 
 ![Mosaiq SRO detailed registration view](images/GC_Elekta_Patient_Upload_Process/06_mosaiq_sro_detailed.png)
 
-Export CBCTs to MIM for anonymisation.:
+## Anonymisation and Folder Sorting
 
-![Mosaiq CBCT export/list view](images/GC_Elekta_Patient_Upload_Process/07_mosaiq_export_cbcts.png)
+Anonymisation and folder sorting are now handled by the **LEARN Pipeline GUI** (`python -m learn_upload`). This replaces the previous MIM-based anonymisation workflow.
 
-![DICOM Export Advanced Options dialog](images/GC_Elekta_Patient_Upload_Process/08_dicom_export_options.png)
+The GUI wizard automates the following steps:
 
-If on another state's MIM and you don't have access to those network shares, you might have to export to MIM NSW or MIM Test and then anonymise and export to file from there.
+1. **Folder Sort** -- copies XVI export files into the LEARN directory structure
+2. **DICOM Anonymisation** -- strips patient-identifiable information from DICOM files and assigns PATxx sequential IDs
+3. **PII Verification** -- scans output files for any residual patient-identifiable data
+4. **CBCT Shift Report** -- extracts couch shift values from RPS registration files
 
-## Anonymisation in MIM
-
-All projection and CBCT files in elekta_fdt are already anonymised. TPS data will need to be exported and anonymised. Export plan and include reference images to SNC_DICOM from TPS. Open the folder in MIM. Right click and select anonymize
-
-![MIM right-click Anonymize context menu](images/GC_Elekta_Patient_Upload_Process/09_mim_anonymize_menu.png)
-
-Use the Sequential ID name from the patient list worksheet (this.
-
-![MIM anonymisation dialog showing Sequential ID (GC_LEARN_01)](images/GC_Elekta_Patient_Upload_Process/10_mim_anonymize_dialog.png)
-
-Export to folder in SNC_DICOM or a folder accessible to MIM.
+See the [GUI Walkthrough](GUI_Walkthrough.md) for the full step-by-step guide.
 
 ## Transfer
 
