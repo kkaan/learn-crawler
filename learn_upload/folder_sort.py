@@ -339,7 +339,7 @@ class LearnFolderMapper:
 
         # Assign fraction labels in chronological order
         fraction_map: dict[str, list[CBCTSession]] = {}
-        for fx_idx, date_key in enumerate(sorted(date_groups.keys())):
+        for fx_idx, date_key in enumerate(sorted(date_groups.keys()), start=1):
             fx_label = f"FX{fx_idx}"
             fraction_map[fx_label] = date_groups[date_key]
 
