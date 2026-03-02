@@ -80,9 +80,9 @@ from pathlib import Path
 from learn_upload.anonymise_dicom import DicomAnonymiser
 
 anonymiser = DicomAnonymiser(
-    patient_dir=Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_15002197"),
+    patient_dir=Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_12345678"),
     anon_id="PAT01",
-    output_dir=Path(r"E:\staging\patient_15002197"),
+    output_dir=Path(r"E:\staging\patient_12345678"),
 )
 
 summary = anonymiser.anonymise_all()
@@ -97,7 +97,7 @@ from pathlib import Path
 from learn_upload.folder_sort import LearnFolderMapper
 
 mapper = LearnFolderMapper(
-    patient_dir=Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_15002197"),
+    patient_dir=Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_12345678"),
     anon_id="PAT01",
     site_name="Prostate",
     output_base=Path(r"E:\LEARN_OUTPUT"),
@@ -108,8 +108,8 @@ summary = mapper.execute(dry_run=True)
 
 # Run for real
 summary = mapper.execute(
-    anon_ct_dir=Path(r"E:\staging\patient_15002197\CT_SET"),
-    anon_plan_dir=Path(r"E:\staging\patient_15002197\DICOM_PLAN"),
+    anon_ct_dir=Path(r"E:\staging\patient_12345678\CT_SET"),
+    anon_plan_dir=Path(r"E:\staging\patient_12345678\DICOM_PLAN"),
     dry_run=False,
 )
 ```
@@ -136,8 +136,8 @@ from learn_upload.anonymise_dicom import DicomAnonymiser
 from learn_upload.folder_sort import LearnFolderMapper
 from learn_upload.verify_pii import verify_no_pii
 
-patient = Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_15002197")
-staging = Path(r"E:\staging\patient_15002197")
+patient = Path(r"E:\XVI_COLLECTION\processed\20230403_Flinders\patient_12345678")
+staging = Path(r"E:\staging\patient_12345678")
 output = Path(r"E:\LEARN_OUTPUT")
 
 # Step 1: Anonymise DICOM files
