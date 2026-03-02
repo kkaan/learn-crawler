@@ -180,9 +180,9 @@ Prostate/
     FX0/
       CBCT/
         CBCT1/
-          CBCT Projections/{CDOG, IPS}/    <- .his projection files
-          Reconstructed CBCT/               <- .SCAN volume files
-          Registration file/                <- .RPS.dcm
+          CBCT Projections/{CDOG, IPS}/    ← .his projection files
+          Reconstructed CBCT/               ← .SCAN volume files
+          Registration file/                ← .RPS.dcm
         CBCT2/ ...
       KIM-KV/{img_dirname}/                <- MotionView .his files
     FX1/ ...
