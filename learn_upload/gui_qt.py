@@ -365,7 +365,7 @@ class PiiCheckWorker(QThread):
                     mrn = dir_name[len("patient_"):]
                     if mrn and mrn not in pii_strings:
                         pii_strings.append(mrn)
-                        logger.info("Auto-detected MRN '%s' from source path", mrn)
+                        logger.info("Auto-detected MRN from source path")
 
             if not pii_strings:
                 self.finished.emit({
