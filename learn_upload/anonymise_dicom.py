@@ -232,7 +232,7 @@ def anonymise_ini_file(ini_path: Path, anon_id: str) -> None:
     ``LastName=xxx`` with ``LastName={anon_id}``.
     """
     ini_path = Path(ini_path)
-    text = ini_path.read_text(encoding="utf-8", errors="ignore")
+    text = ini_path.read_text(encoding="utf-8", errors="replace")
 
     text = re.sub(r"(?m)^PatientID=.*$", f"PatientID={anon_id}", text)
     text = re.sub(r"(?m)^FirstName=.*$", "FirstName=", text)
