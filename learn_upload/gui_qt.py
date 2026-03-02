@@ -1513,6 +1513,21 @@ class LearnPipelineWindow(QMainWindow):
 
     def _on_report_done(self, markdown: str):
         self._report_page.set_report(markdown)
+
+        # Save report to Patient Files folder
+        cfg = self._config
+        output_base = Path(cfg["output_path"])
+        site_name = cfg["site_name"].strip()
+        anon_id = cfg["anon_id"].strip()
+        report_dir = output_base / site_name / "Patient Files" / anon_id
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / "cbct_shift_report.md"
+        try:
+            report_path.write_text(markdown, encoding="utf-8")
+            logger.info("Saved CBCT shift report to %s", report_path)
+        except Exception:
+            logger.warning("Failed to save shift report to %s", report_path, exc_info=True)
+
         self._completed_steps.add(5)
         self._btn_continue.setText("New Patient")
         self._btn_continue.setEnabled(True)
