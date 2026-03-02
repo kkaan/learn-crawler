@@ -329,7 +329,7 @@ def anonymise_output_folder(
     """
     output_dir = Path(output_dir)
     patient_dir = Path(patient_dir)
-    site_root = output_dir / site_name
+    site_root = output_dir / Path(site_name).name
 
     # Detect original patient ID from source directory name
     patient_dir_name = patient_dir.name
