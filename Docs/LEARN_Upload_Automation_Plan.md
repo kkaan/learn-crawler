@@ -81,7 +81,7 @@ class DicomAnonymiser:
 ```
 
 ### Reuse
-- `pydicom` patterns from existing `extract_elekta_rps_matrices.py`
+- `pydicom` patterns from existing `scripts/extract_elekta_rps_matrices.py`
 - Never modifies source files -- writes to staging directory
 
 ## Script 2: `folder_sort.py`
@@ -175,8 +175,8 @@ class LearnFolderMapper:
 ```
 
 ### Reuse
-- `elektafdt_crawler.py` -- patient directory traversal and `_Frames.xml` parsing patterns
-- `extract_elekta_rps_matrices.py` -- `ElektaRPSExtractor` for shift extraction from RPS.dcm
+- `scripts/elektafdt_crawler.py` -- patient directory traversal and `_Frames.xml` parsing patterns
+- `scripts/extract_elekta_rps_matrices.py` -- `ElektaRPSExtractor` for shift extraction from RPS.dcm
 
 ## Script 3: `treatment_notes.py`
 
@@ -333,5 +333,5 @@ STAGE 8: TRANSFER READINESS CHECK
 
 | File | What to Reuse |
 |------|--------------|
-| `elektafdt_crawler.py` | Patient directory traversal, `_Frames.xml` parsing, CSV output |
-| `extract_elekta_rps_matrices.py` | `ElektaRPSExtractor` class for RPS.dcm shift extraction, ZIP-embedded INI parsing |
+| `scripts/elektafdt_crawler.py` | Patient directory traversal, `_Frames.xml` parsing, CSV output |
+| `scripts/extract_elekta_rps_matrices.py` | `ElektaRPSExtractor` class for RPS.dcm shift extraction, ZIP-embedded INI parsing |

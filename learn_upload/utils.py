@@ -2,8 +2,8 @@
 Shared parsing utilities for Elekta XVI data files.
 
 Functions here are generalised from patterns in the existing standalone scripts:
-- elektafdt_crawler.py          (XML parsing)
-- extract_elekta_rps_matrices.py (ZIP-embedded INI parsing from RPS DICOM)
+- scripts/elektafdt_crawler.py          (XML parsing)
+- scripts/extract_elekta_rps_matrices.py (ZIP-embedded INI parsing from RPS DICOM)
 
 They are designed to be reused across anonymise_dicom, folder_sort,
 treatment_notes, and upload_workflow modules.
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Fields we extract from XVI plain INI files.  The regex approach (not
-# configparser) is inherited from extract_elekta_rps_matrices.py because XVI
+# configparser) is inherited from scripts/extract_elekta_rps_matrices.py because XVI
 # INI files use non-standard formatting that configparser chokes on.
 _INI_FIELDS = [
     "PatientID",
@@ -117,7 +117,7 @@ def parse_scan_datetime(scan_uid: str) -> Optional[datetime]:
 def parse_frames_xml(xml_path: Path) -> dict:
     """Parse a ``_Frames.xml`` file and return treatment + acquisition metadata.
 
-    Refactored from ``elektafdt_crawler.py:get_plan_name_from_xml()``.
+    Refactored from ``scripts/elektafdt_crawler.py:get_plan_name_from_xml()``.
 
     Parameters
     ----------
@@ -234,7 +234,7 @@ def extract_ini_from_rps(dcm_path: Path) -> Optional[str]:
     The RPS DICOM stores a ZIP archive in private tag ``(0021,103A)``.
     Inside the ZIP is a ``.INI.XVI`` file with registration data.
 
-    Refactored from ``extract_elekta_rps_matrices.py:extract_zip()``.
+    Refactored from ``scripts/extract_elekta_rps_matrices.py:extract_zip()``.
 
     Parameters
     ----------

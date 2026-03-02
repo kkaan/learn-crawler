@@ -28,7 +28,7 @@ DEFAULT_LEARN_OUTPUT = Path(r"E:\LEARN_OUTPUT")
 # Elekta XVI DICOM private tags
 # ---------------------------------------------------------------------------
 # RPS DICOM files embed a ZIP archive in this private tag containing .INI.XVI
-# registration data.  See extract_elekta_rps_matrices.py for usage.
+# registration data.  See scripts/extract_elekta_rps_matrices.py for usage.
 RPS_ZIP_TAG = (0x0021, 0x103A)
 
 # ---------------------------------------------------------------------------
