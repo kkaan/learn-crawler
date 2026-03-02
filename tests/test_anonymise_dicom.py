@@ -8,7 +8,13 @@ from pydicom.dataset import Dataset, FileDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import pytest
 
-from learn_upload.anonymise_dicom import DicomAnonymiser
+from learn_upload.anonymise_dicom import (
+    DicomAnonymiser,
+    anonymise_ini_file,
+    anonymise_centroid_file,
+    anonymise_trajectory_log,
+    anonymise_output_folder,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -431,3 +437,282 @@ class TestEdgeCases:
 
         assert output_dir.exists()
         assert (output_dir / "CT_SET" / "s1.DCM").exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests: anonymise_ini_file
+# ---------------------------------------------------------------------------
+
+class TestAnonymiseIniFile:
+    def test_replaces_pii_fields(self, tmp_path):
+        ini = tmp_path / "recon.INI"
+        ini.write_text(
+            "PatientID=12345678\n"
+            "FirstName=JOHN\n"
+            "LastName=SMITH\n"
+            "VoxelSize=1.0\n"
+            "SliceThickness=2.5\n",
+            encoding="utf-8",
+        )
+
+        anonymise_ini_file(ini, "PAT01")
+
+        text = ini.read_text(encoding="utf-8")
+        assert "PatientID=PAT01" in text
+        assert "FirstName=" in text and "FirstName=JOHN" not in text
+        assert "LastName=PAT01" in text
+        # Non-PII lines unchanged
+        assert "VoxelSize=1.0" in text
+        assert "SliceThickness=2.5" in text
+
+    def test_ini_xvi_extension(self, tmp_path):
+        ini = tmp_path / "recon.INI.XVI"
+        ini.write_text(
+            "PatientID=87654321\n"
+            "FirstName=JANE\n"
+            "LastName=DOE\n"
+            "Rows=512\n",
+            encoding="utf-8",
+        )
+
+        anonymise_ini_file(ini, "PAT02")
+
+        text = ini.read_text(encoding="utf-8")
+        assert "PatientID=PAT02" in text
+        assert "FirstName=JANE" not in text
+        assert "LastName=PAT02" in text
+        assert "Rows=512" in text
+
+
+# ---------------------------------------------------------------------------
+# Tests: anonymise_centroid_file
+# ---------------------------------------------------------------------------
+
+class TestAnonymiseCentroidFile:
+    def test_replaces_first_two_lines(self, tmp_path):
+        f = tmp_path / "centroid.txt"
+        f.write_text("12345678\nSMITH JOHN\ndata line\n", encoding="utf-8")
+
+        result = anonymise_centroid_file(f, "PAT01")
+
+        lines = result.read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "PAT01"
+        assert lines[1] == "PAT01"
+        assert lines[2] == "data line"
+
+    def test_renames_file_with_mrn(self, tmp_path):
+        f = tmp_path / "Centroid_12345678.txt"
+        f.write_text("12345678\nSMITH JOHN\ncoords\n", encoding="utf-8")
+
+        result = anonymise_centroid_file(f, "PAT01")
+
+        assert result.name == "Centroid_PAT01.txt"
+        assert result.exists()
+        assert not f.exists()
+
+    def test_no_rename_without_mrn(self, tmp_path):
+        f = tmp_path / "centroid.txt"
+        f.write_text("12345678\nSMITH JOHN\ncoords\n", encoding="utf-8")
+
+        result = anonymise_centroid_file(f, "PAT01")
+
+        assert result == f
+        assert result.exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests: anonymise_trajectory_log
+# ---------------------------------------------------------------------------
+
+class TestAnonymiseTrajectoryLog:
+    def test_replaces_patient_id(self, tmp_path):
+        f = tmp_path / "MarkerLocations01.txt"
+        f.write_text(
+            "path=patient_12345678/data\n"
+            "ref=patient_12345678\n"
+            "other line\n",
+            encoding="utf-8",
+        )
+
+        anonymise_trajectory_log(f, "12345678", "PAT01")
+
+        text = f.read_text(encoding="utf-8")
+        assert "patient_PAT01" in text
+        assert "patient_12345678" not in text
+        assert "other line" in text
+
+    def test_empty_original_id_no_change(self, tmp_path):
+        f = tmp_path / "MarkerLocations01.txt"
+        original = "path=patient_12345678/data\nother\n"
+        f.write_text(original, encoding="utf-8")
+
+        anonymise_trajectory_log(f, "", "PAT01")
+
+        assert f.read_text(encoding="utf-8") == original
+
+
+# ---------------------------------------------------------------------------
+# Tests: anonymise_output_folder
+# ---------------------------------------------------------------------------
+
+_FRAMES_XML_PII = """\
+<?xml version="1.0" encoding="utf-8"?>
+<FrameData>
+    <Patient>
+        <FirstName>JOHN</FirstName>
+        <LastName>SMITH</LastName>
+        <ID>12345678</ID>
+    </Patient>
+    <Treatment><ID>Prostate</ID></Treatment>
+</FrameData>
+"""
+
+
+def _build_output_tree(tmp_path):
+    """Build a realistic output folder structure for anonymise_output_folder tests.
+
+    Returns (output_dir, patient_dir, site_name).
+    """
+    site_name = "Prostate"
+    output_dir = tmp_path / "output"
+    site_root = output_dir / site_name
+
+    # Patient Images — CBCT with _Frames.xml, INI, .his
+    cbct = site_root / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1"
+    cbct.mkdir(parents=True)
+    (cbct / "_Frames.xml").write_text(_FRAMES_XML_PII, encoding="utf-8")
+
+    recon = cbct / "Reconstructed CBCT"
+    recon.mkdir()
+    (recon / "recon.INI").write_text(
+        "PatientID=12345678\nFirstName=JOHN\nLastName=SMITH\nRows=512\n",
+        encoding="utf-8",
+    )
+
+    proj = cbct / "CBCT Projections" / "IPS"
+    proj.mkdir(parents=True)
+    (proj / "00001.his").write_bytes(b"\x00\x01\x02\x03")
+
+    # Patient Files — centroid
+    pf = site_root / "Patient Files" / "PAT01"
+    pf.mkdir(parents=True)
+    (pf / "Centroid_12345678.txt").write_text(
+        "12345678\nSMITH JOHN\ncoords\n", encoding="utf-8"
+    )
+
+    # KIM-KV — trajectory log
+    kim = site_root / "KIM-KV" / "img_session"
+    kim.mkdir(parents=True)
+    (kim / "MarkerLocations01.txt").write_text(
+        "path=patient_12345678/data\n", encoding="utf-8"
+    )
+
+    # Source patient dir (must exist for DicomAnonymiser)
+    patient_dir = tmp_path / "patient_12345678"
+    patient_dir.mkdir()
+
+    return output_dir, patient_dir, site_name
+
+
+class TestAnonymiseOutputFolder:
+    def test_anonymises_all_file_types(self, tmp_path):
+        output_dir, patient_dir, site_name = _build_output_tree(tmp_path)
+
+        counts = anonymise_output_folder(
+            output_dir=output_dir,
+            anon_id="PAT01",
+            site_name=site_name,
+            patient_dir=patient_dir,
+        )
+
+        assert counts["xml"] == 1
+        assert counts["ini"] == 1
+        assert counts["centroid"] == 1
+        assert counts["trajectory"] == 1
+        assert counts["errors"] == 0
+
+        site_root = output_dir / site_name
+
+        # _Frames.xml anonymised
+        xml_path = (
+            site_root / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1"
+            / "_Frames.xml"
+        )
+        xml_text = xml_path.read_text(encoding="utf-8")
+        assert "12345678" not in xml_text
+        assert "JOHN" not in xml_text
+
+        # INI anonymised
+        ini_path = (
+            site_root / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1"
+            / "Reconstructed CBCT" / "recon.INI"
+        )
+        ini_text = ini_path.read_text(encoding="utf-8")
+        assert "PatientID=PAT01" in ini_text
+        assert "12345678" not in ini_text
+
+        # Centroid anonymised and renamed
+        centroid_dir = site_root / "Patient Files" / "PAT01"
+        centroid_files = list(centroid_dir.glob("Centroid_*.txt"))
+        assert len(centroid_files) == 1
+        assert "PAT01" in centroid_files[0].name
+        centroid_text = centroid_files[0].read_text(encoding="utf-8")
+        assert centroid_text.splitlines()[0] == "PAT01"
+
+        # Trajectory log anonymised
+        traj_path = (
+            site_root / "KIM-KV" / "img_session" / "MarkerLocations01.txt"
+        )
+        traj_text = traj_path.read_text(encoding="utf-8")
+        assert "patient_PAT01" in traj_text
+        assert "patient_12345678" not in traj_text
+
+        # .his file untouched
+        his_path = (
+            site_root / "Patient Images" / "PAT01" / "FX1" / "CBCT" / "CBCT1"
+            / "CBCT Projections" / "IPS" / "00001.his"
+        )
+        assert his_path.read_bytes() == b"\x00\x01\x02\x03"
+
+    def test_tps_import(self, tmp_path):
+        output_dir, patient_dir, site_name = _build_output_tree(tmp_path)
+
+        # Create a TPS export with a DICOM CT file
+        tps = tmp_path / "tps_export"
+        _make_test_dicom(tps / "DICOM CT Images", "ct_slice.dcm")
+
+        counts = anonymise_output_folder(
+            output_dir=output_dir,
+            anon_id="PAT01",
+            site_name=site_name,
+            patient_dir=patient_dir,
+            tps_path=tps,
+        )
+
+        assert counts["tps_imported"] == 1
+
+        ct_dir = output_dir / site_name / "Patient Plans" / "PAT01" / "CT"
+        dcm_files = list(ct_dir.rglob("*.dcm")) + list(ct_dir.rglob("*.DCM"))
+        assert len(dcm_files) >= 1
+        ds = pydicom.dcmread(dcm_files[0])
+        assert ds.PatientID == "PAT01"
+
+    def test_progress_callback(self, tmp_path):
+        output_dir, patient_dir, site_name = _build_output_tree(tmp_path)
+
+        calls = []
+
+        def on_progress(current, total, filename):
+            calls.append((current, total, filename))
+
+        anonymise_output_folder(
+            output_dir=output_dir,
+            anon_id="PAT01",
+            site_name=site_name,
+            patient_dir=patient_dir,
+            progress_callback=on_progress,
+        )
+
+        assert len(calls) > 0
+        # Final call should have current == total
+        assert calls[-1][0] == calls[-1][1]
