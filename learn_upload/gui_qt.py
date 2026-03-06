@@ -17,7 +17,6 @@ import faulthandler
 import json
 import logging
 import sys
-import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -25,8 +24,8 @@ from typing import Optional
 
 from PyQt6.QtCore import (
     QObject,
-    QThread,
     Qt,
+    QThread,
     pyqtSignal,
 )
 from PyQt6.QtGui import QFont
@@ -45,7 +44,6 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -55,7 +53,7 @@ from PyQt6.QtWidgets import (
 )
 
 from learn_upload.anonymise_dicom import anonymise_output_folder
-from learn_upload.config import DEFAULT_LEARN_OUTPUT, DEFAULT_XVI_BASE, setup_logging
+from learn_upload.config import DEFAULT_LEARN_OUTPUT, setup_logging
 from learn_upload.folder_sort import LearnFolderMapper
 from learn_upload.verify_pii import verify_no_pii
 

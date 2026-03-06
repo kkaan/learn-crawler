@@ -2,17 +2,13 @@
 
 import textwrap
 from datetime import datetime
-from pathlib import Path
-
-import pytest
 
 from learn_upload.utils import (
-    parse_xvi_ini,
+    parse_couch_shifts,
     parse_frames_xml,
     parse_scan_datetime,
-    parse_couch_shifts,
+    parse_xvi_ini,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

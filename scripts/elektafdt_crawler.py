@@ -4,12 +4,10 @@ Script to extract treatment plan names from patient directories and create a CSV
 Scans all patient_* directories and reads _Frames.xml files to extract actual plan names.
 """
 
-import os
 import csv
-import sys
-from pathlib import Path
 import logging
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

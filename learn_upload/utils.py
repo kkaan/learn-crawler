@@ -12,8 +12,8 @@ treatment_notes, and upload_workflow modules.
 import io
 import logging
 import re
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional

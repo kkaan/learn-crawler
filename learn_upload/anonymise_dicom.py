@@ -7,7 +7,6 @@ _Frames.xml, INI configuration files, centroid files, and trajectory logs.
 
 import logging
 import re
-import shutil
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -15,7 +14,7 @@ from pathlib import Path
 import pydicom
 from pydicom.valuerep import PersonName
 
-from learn_upload.config import DICOM_TAGS_REPLACE, DICOM_TAGS_CLEAR
+from learn_upload.config import DICOM_TAGS_CLEAR, DICOM_TAGS_REPLACE
 
 logger = logging.getLogger(__name__)
 

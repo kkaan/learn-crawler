@@ -9,14 +9,12 @@ from unittest.mock import patch
 import pydicom
 from pydicom.dataset import FileDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
-import pytest
 
 from learn_upload.folder_sort import (
     CBCTSession,
     LearnFolderMapper,
     classify_acquisition,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

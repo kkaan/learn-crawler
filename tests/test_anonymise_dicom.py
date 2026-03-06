@@ -4,18 +4,17 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pydicom
-from pydicom.dataset import Dataset, FileDataset
-from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import pytest
+from pydicom.dataset import FileDataset
+from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
 from learn_upload.anonymise_dicom import (
     DicomAnonymiser,
-    anonymise_ini_file,
     anonymise_centroid_file,
-    anonymise_trajectory_log,
+    anonymise_ini_file,
     anonymise_output_folder,
+    anonymise_trajectory_log,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helper: create a minimal synthetic DICOM file

@@ -5,10 +5,8 @@ from pathlib import Path
 import pydicom
 from pydicom.dataset import FileDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
-import pytest
 
 from learn_upload.verify_pii import verify_no_pii
-
 
 # ---------------------------------------------------------------------------
 # Helper: create a minimal synthetic DICOM file
