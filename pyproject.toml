@@ -11,8 +11,11 @@ dependencies = [
     "pydicom>=3.0.1",
 ]
 
+[project.scripts]
+learn-upload = "learn_upload.__main__:main"
+
 [project.optional-dependencies]
-gui = ["PyQt6"]
+gui = ["PyQt6", "numpy"]
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",
