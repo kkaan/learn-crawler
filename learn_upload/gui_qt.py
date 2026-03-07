@@ -1565,7 +1565,8 @@ def _enable_dark_title_bar(hwnd: int) -> None:
 
 
 def main() -> None:
-    faulthandler.enable()
+    if sys.stderr is not None:
+        faulthandler.enable()
     setup_logging(logging.INFO)
 
     app = QApplication(sys.argv)
