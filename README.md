@@ -2,29 +2,54 @@
 
 **Author:** Kaan
 
-Utilities for interrogating and formatting patient CT, CBCT, SRO, structure set, and projection files from Elekta radiotherapy platforms. The tools and scripts here support the data requirements of the PRIME and LEARN clinical trials.
+Automation tools for the LEARN data transfer pipeline -- transferring Elekta XVI CBCT patient data from GC (GenesisCare) to the USYD RDS research drive. Replaces manual anonymisation, folder sorting, and PII verification with a guided desktop workflow.
 
-## Quick Start
+## Download
+
+Grab the latest **`learn_upload.exe`** from [GitHub Releases](https://github.com/kkaan/learn-crawler/releases/latest). No Python installation required -- just download and double-click.
+
+### Important: Use Local Drives
+
+For best performance, **copy your XVI export data to a local drive** (e.g. `E:\` or `C:\`) before running the tool. XVI exports contain thousands of small `.his` projection files -- reading these over a network share is significantly slower than working from a local disk.
+
+1. Copy the `patient_XXXXXXXX/` folder from the network to a local drive
+2. Run `learn_upload.exe`
+3. Point the source path to your local copy
+4. Set the output path to another local directory (e.g. `E:\LEARN_OUTPUT`)
+5. Once processing is complete, copy the output to the RDS research drive
+
+### What the GUI Does
+
+The wizard walks you through 6 steps:
+
+1. **Configuration** -- set paths, anonymised ID (PATxx), and PII search strings
+2. **Data Preview** -- discover XVI sessions and preview fraction assignments
+3. **Folder Sort** -- copy files into the LEARN directory structure
+4. **Anonymise** -- run DICOM anonymisation with per-file progress
+5. **PII Verification** -- scan output for residual patient data
+6. **CBCT Shift Report** -- generate a markdown report of CBCT registration shifts
+
+See the **[GUI Walkthrough](Docs/GUI_Walkthrough.md)** for a step-by-step guide with screenshots.
+
+## Developer Setup
 
 ```bash
-# Clone the repository (USYD GitHub Enterprise)
-git clone https://github.sydney.edu.au/kkan2243/learn-crawler-elekta.git
-cd learn-crawler-elekta
-
-# Or clone from GitHub.com (public mirror)
-# git clone https://github.com/kkaan/learn-crawler.git
+# Clone the repository
+git clone https://github.com/kkaan/learn-crawler.git
+cd learn-crawler
 
 # Install dependencies
-pip install pydicom PyQt6
+pip install -r requirements-dev.txt
+pip install PyQt6  # for GUI development
 
-# Launch the GUI wizard
+# Launch the GUI from source
 python -m learn_upload
 
 # Run tests
 python -m pytest tests/ -v
 
-# Verify the package imports
-python -c "from learn_upload.folder_sort import LearnFolderMapper; print('ok')"
+# Run linter
+ruff check learn_upload/ tests/ scripts/
 ```
 
 ## Repository Layout
@@ -53,23 +78,6 @@ The `learn_upload/` package automates the LEARN data transfer pipeline -- transf
 | `folder_sort.py` | XVI export to LEARN directory structure mapping and file copying |
 | `verify_pii.py` | Post-anonymisation scan for residual patient-identifiable data |
 | `gui_qt.py` | PyQt6 desktop GUI wrapping all pipeline steps |
-
-### Using the GUI
-
-```bash
-python -m learn_upload
-```
-
-This launches a 6-step wizard:
-
-1. **Configuration** -- set paths, anonymised ID (PATxx), and PII search strings
-2. **Data Preview** -- discover XVI sessions and preview fraction assignments
-3. **Folder Sort** -- copy files into the LEARN directory structure
-4. **Anonymise** -- run DICOM anonymisation with per-file progress
-5. **PII Verification** -- scan output for residual patient data
-6. **CBCT Shift Report** -- generate a markdown report of CBCT registration shifts
-
-See the **[GUI Walkthrough](Docs/GUI_Walkthrough.md)** for a step-by-step guide with screenshots.
 
 ### Using the Python API (no GUI)
 
