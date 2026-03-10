@@ -51,7 +51,7 @@ def clipbox_to_mosaiq(clipbox):
     }
 
 
-def generate_report(patient_path):
+def generate_report(patient_path, redcap_id=None):
     """Generate markdown report for a patient directory."""
     patient_path = Path(patient_path)
     patient_id = patient_path.name
@@ -82,7 +82,7 @@ def generate_report(patient_path):
 
     # Build markdown
     header = OrderedDict(REDCAP_DEFAULTS)
-    header["RedCap ID"] = patient_id
+    header["RedCap ID"] = redcap_id or patient_id
 
     lines = [
         f"# CBCT Shift Report: {patient_id}",
@@ -93,7 +93,7 @@ def generate_report(patient_path):
         "",
     ]
     for key, val in header.items():
-        lines.append(f"- **{key}:** {val or '—'}")
+        lines.append(f"- **{key}:** {val}")
 
     lines += [
         "",
@@ -117,6 +117,39 @@ def generate_report(patient_path):
         "",
         "Translations: Clipbox long/lat/vert -> Mosaiq Sup/Lat/Ant (same sign, cm)",
         "Rotations: CB roll -> Cor(B), CB rotation -> Sag(B), -CB pitch -> Trans(B) (degrees)",
+        "",
+        "## Data Sources",
+        "",
+        "**Study Details**",
+        "",
+        "| Field | Source |",
+        "|-------|--------|",
+        "| RedCap ID | User-entered via GUI (or anonymised patient ID as fallback) |",
+        "| Image Collected | Hardcoded default |",
+        "| Linac Type | Hardcoded default |",
+        "| Imager Position (SDD) | Hardcoded default |",
+        "| Couch Type | Hardcoded default |",
+        "| Coordinate System | Manual entry required |",
+        "| kV | Hardcoded default |",
+        "| mAs | Hardcoded default |",
+        "| Marker Length and Type | Manual entry required |",
+        "| Cdog Version | Manual entry required |",
+        "",
+        "**CBCT Sessions**",
+        "",
+        "| Column | Source |",
+        "|--------|--------|",
+        "| FX | Directory path label (e.g. `FX1/`) |",
+        "| CBCT | Directory path label (e.g. `CBCT1/`) |",
+        "| Date, Time | RPS DICOM INI `DateTime=` field; fallback: DICOM ContentDate/ContentTime |",
+        "| Sup (cm) | RPS Clipbox `longitudinal` value |",
+        "| Lat (cm) | RPS Clipbox `lateral` value |",
+        "| Ant (cm) | RPS Clipbox `vertical` value |",
+        "| Cor (deg) | RPS Clipbox `roll` (unwrapped from 0-360 to -180..180) |",
+        "| Sag (deg) | RPS Clipbox `rotation` (unwrapped) |",
+        "| Trans (deg) | Negated RPS Clipbox `pitch` (unwrapped) |",
+        "",
+        "RPS files located via glob: `**/Registration file/*.RPS.dcm`",
         "",
     ]
 

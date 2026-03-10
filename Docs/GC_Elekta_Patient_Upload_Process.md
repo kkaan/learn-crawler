@@ -95,7 +95,7 @@ The GUI wizard automates the following steps:
 
 See the [GUI Walkthrough](GUI_Walkthrough.md) for the full step-by-step guide.
 
-> **Alert:** The utility does not yet include the current calibration files with the transfer. A copy of the `Current Calibration` folder must be manually inserted into each fraction folder under Patient Images.
+> **Note:** The utility supports automatic copying of calibration files. In the Configuration step, use the **Calibrations Dir** field to point to the `Current Calibration` folder. The pipeline will copy it into each fraction folder under Patient Images.
 
 ## Transfer
 

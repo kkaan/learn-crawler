@@ -328,11 +328,13 @@ class FolderSortWorker(QThread):
         try:
             centroid_path = cfg.get("centroid_path", "")
             trajectory_dir = cfg.get("trajectory_dir", "")
+            calibrations_dir = cfg.get("calibrations_dir", "")
             dry_run = cfg.get("dry_run", False)
 
             summary = self.mapper.execute(
                 centroid_path=Path(centroid_path) if centroid_path else None,
                 trajectory_base_dir=Path(trajectory_dir) if trajectory_dir else None,
+                calibrations_dir=Path(calibrations_dir) if calibrations_dir else None,
                 dry_run=dry_run,
                 progress_callback=lambda cur, tot, msg: self.progress.emit(cur, tot, msg),
             )
@@ -405,9 +407,10 @@ class ReportWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, patient_images_path: str):
+    def __init__(self, patient_images_path: str, redcap_id: str = ""):
         super().__init__()
         self.patient_images_path = patient_images_path
+        self.redcap_id = redcap_id
 
     def run(self):
         try:
@@ -417,7 +420,7 @@ class ReportWorker(QThread):
                 sys.path.insert(0, str(cbct_shifts_dir))
             from report_patient_details import generate_report
 
-            report = generate_report(Path(self.patient_images_path))
+            report = generate_report(Path(self.patient_images_path), redcap_id=self.redcap_id)
             if report is None:
                 self.error.emit("No RPS files found -- cannot generate report.")
             else:
@@ -574,6 +577,10 @@ class ConfigPage(QWidget):
         self.anon_id.setPlaceholderText("PAT01")
         id_form.addRow("Anonymised ID:", self.anon_id)
 
+        self.redcap_id = QLineEdit()
+        self.redcap_id.setPlaceholderText("e.g. LEARN_001")
+        id_form.addRow("REDCap ID:", self.redcap_id)
+
         self.site_name = QLineEdit()
         self.site_name.setPlaceholderText("e.g. Prostate")
         id_form.addRow("Site Name:", self.site_name)
@@ -597,6 +604,7 @@ class ConfigPage(QWidget):
         paths_form.addRow("Images Subdirectory:", self.images_subdir)
         self.centroid_path = self._path_row(paths_form, "Centroid File:", folder=False)
         self.trajectory_dir = self._path_row(paths_form, "Trajectory Logs Dir:", folder=True)
+        self.calibrations_dir = self._path_row(paths_form, "Calibrations Dir:", folder=True)
 
         paths_card.layout().addLayout(paths_form)
         layout.addWidget(paths_card)
@@ -670,6 +678,7 @@ class ConfigPage(QWidget):
         pii = [s.strip() for s in self.pii_strings.text().split(",") if s.strip()]
         return {
             "anon_id": self.anon_id.text().strip(),
+            "redcap_id": self.redcap_id.text().strip(),
             "site_name": self.site_name.text().strip(),
             "source_path": self.source_path.text().strip(),
             "tps_path": self.tps_path.text().strip(),
@@ -678,6 +687,7 @@ class ConfigPage(QWidget):
             "images_subdir": self.images_subdir.text().strip() or "IMAGES",
             "centroid_path": self.centroid_path.text().strip(),
             "trajectory_dir": self.trajectory_dir.text().strip(),
+            "calibrations_dir": self.calibrations_dir.text().strip(),
             "pii_strings": pii,
             "dry_run": self.dry_run.isChecked(),
         }
@@ -699,6 +709,7 @@ class ConfigPage(QWidget):
     def set_config(self, cfg: dict) -> None:
         """Pre-populate form fields from a config dict."""
         self.anon_id.setText(cfg.get("anon_id", ""))
+        self.redcap_id.setText(cfg.get("redcap_id", ""))
         self.site_name.setText(cfg.get("site_name", ""))
         self.source_path.setText(cfg.get("source_path", ""))
         self.tps_path.setText(cfg.get("tps_path", ""))
@@ -707,6 +718,7 @@ class ConfigPage(QWidget):
         self.images_subdir.setText(cfg.get("images_subdir", "XVI Export"))
         self.centroid_path.setText(cfg.get("centroid_path", ""))
         self.trajectory_dir.setText(cfg.get("trajectory_dir", ""))
+        self.calibrations_dir.setText(cfg.get("calibrations_dir", ""))
         pii = cfg.get("pii_strings", [])
         if isinstance(pii, list):
             self.pii_strings.setText(", ".join(pii))
@@ -1503,8 +1515,9 @@ class LearnPipelineWindow(QMainWindow):
         site_name = cfg["site_name"].strip()
         anon_id = cfg["anon_id"].strip()
         patient_images_path = str(output_base / site_name / "Patient Images" / anon_id)
+        redcap_id = cfg.get("redcap_id", "")
 
-        worker = ReportWorker(patient_images_path)
+        worker = ReportWorker(patient_images_path, redcap_id=redcap_id)
         worker.finished.connect(self._on_report_done)
         worker.error.connect(self._on_report_error)
         self._start_worker(worker)

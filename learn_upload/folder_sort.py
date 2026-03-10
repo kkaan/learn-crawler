@@ -582,12 +582,49 @@ class LearnFolderMapper:
         logger.info("Trajectory logs copied: %s", counts)
         return counts
 
+    # ----- Current Calibrations -----
+
+    def copy_calibrations(
+        self,
+        calibrations_dir: Path,
+        fraction_map: dict[str, list],
+    ) -> dict:
+        """Copy a Current Calibration folder into every fraction directory.
+
+        Parameters
+        ----------
+        calibrations_dir : Path
+            Source directory containing calibration files.
+        fraction_map : dict[str, list[CBCTSession]]
+            Fraction label → list of sessions (determines FX labels).
+
+        Returns
+        -------
+        dict
+            ``{"fx_count": N, "files_copied": M}``.
+        """
+        calibrations_dir = Path(calibrations_dir)
+        site_root = self.output_base / self.site_name
+        images_root = site_root / "Patient Images" / self.anon_id
+
+        counts = {"fx_count": 0, "files_copied": 0}
+
+        for fx_label in sorted(fraction_map.keys()):
+            dest = images_root / fx_label / "CurrentCalibrations"
+            shutil.copytree(calibrations_dir, dest, dirs_exist_ok=True)
+            counts["fx_count"] += 1
+            counts["files_copied"] += sum(1 for f in dest.rglob("*") if f.is_file())
+
+        logger.info("Calibrations copied: %s", counts)
+        return counts
+
     # ----- Execute -----
 
     def execute(
         self,
         centroid_path: Path = None,
         trajectory_base_dir: Path = None,
+        calibrations_dir: Path = None,
         dry_run: bool = False,
         progress_callback=None,
     ) -> dict:
@@ -698,6 +735,11 @@ class LearnFolderMapper:
         if trajectory_base_dir and Path(trajectory_base_dir).is_dir():
             traj_counts = self.copy_trajectory_logs(trajectory_base_dir)
             summary["files_copied"]["trajectory"] = traj_counts["files_copied"]
+
+        # 9. Copy current calibrations
+        if calibrations_dir and Path(calibrations_dir).is_dir():
+            cal_counts = self.copy_calibrations(Path(calibrations_dir), fraction_map)
+            summary["files_copied"]["calibrations"] = cal_counts["files_copied"]
 
         logger.info("Execute complete: %s", summary)
         return summary

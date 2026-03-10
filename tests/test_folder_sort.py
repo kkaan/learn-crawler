@@ -837,3 +837,92 @@ class TestCopyTrajectoryLogs:
                 / "FX01" / "Trajectory Logs" / fname
             )
             assert src.read_text() == dest.read_text()
+
+
+# ---------------------------------------------------------------------------
+# copy_calibrations
+# ---------------------------------------------------------------------------
+
+class TestCopyCalibrations:
+    def _setup_calibrations(self, tmp_path):
+        """Create a Current Calibration source directory with nested files."""
+        cal_dir = tmp_path / "CurrentCalibration"
+        cal_dir.mkdir()
+        (cal_dir / "FlexMap.dat").write_bytes(b"\x00" * 100)
+        (cal_dir / "DarkField.dat").write_bytes(b"\x00" * 200)
+        sub = cal_dir / "subfolder"
+        sub.mkdir()
+        (sub / "additional.dat").write_bytes(b"\x00" * 50)
+        return cal_dir
+
+    def _make_fraction_map(self, tmp_path):
+        """Create a minimal fraction map with 2 fractions."""
+        s1 = CBCTSession(
+            img_dir=tmp_path / "img_001",
+            dicom_uid="uid1",
+            acquisition_preset="4ee Pelvis",
+            session_type="cbct",
+            treatment_id="Prostate",
+            scan_datetime=datetime(2023, 3, 21, 10, 0),
+        )
+        s2 = CBCTSession(
+            img_dir=tmp_path / "img_002",
+            dicom_uid="uid2",
+            acquisition_preset="4ee Pelvis",
+            session_type="cbct",
+            treatment_id="Prostate",
+            scan_datetime=datetime(2023, 3, 22, 10, 0),
+        )
+        return {"FX1": [s1], "FX2": [s2]}
+
+    def test_copy_calibrations(self, tmp_path):
+        """Calibration files placed in each FX directory."""
+        patient_dir = tmp_path / "patient_12345678"
+        patient_dir.mkdir()
+        cal_dir = self._setup_calibrations(tmp_path)
+        fraction_map = self._make_fraction_map(tmp_path)
+        out = tmp_path / "out"
+
+        mapper = LearnFolderMapper(patient_dir, "PAT01", "Prostate", out)
+        mapper.create_learn_structure(fraction_map)
+        counts = mapper.copy_calibrations(cal_dir, fraction_map)
+
+        assert counts["fx_count"] == 2
+        assert counts["files_copied"] == 6  # 3 files × 2 fractions
+
+        for fx in ("FX1", "FX2"):
+            cal_dest = out / "Prostate" / "Patient Images" / "PAT01" / fx / "CurrentCalibrations"
+            assert cal_dest.is_dir()
+            assert (cal_dest / "FlexMap.dat").exists()
+            assert (cal_dest / "DarkField.dat").exists()
+            assert (cal_dest / "subfolder" / "additional.dat").exists()
+
+    def test_calibrations_preserves_subdirectories(self, tmp_path):
+        """Nested directory structure within calibrations is preserved."""
+        patient_dir = tmp_path / "patient_12345678"
+        patient_dir.mkdir()
+        cal_dir = self._setup_calibrations(tmp_path)
+        fraction_map = self._make_fraction_map(tmp_path)
+        out = tmp_path / "out"
+
+        mapper = LearnFolderMapper(patient_dir, "PAT01", "Prostate", out)
+        mapper.create_learn_structure(fraction_map)
+        mapper.copy_calibrations(cal_dir, fraction_map)
+
+        nested = out / "Prostate" / "Patient Images" / "PAT01" / "FX1" / "CurrentCalibrations" / "subfolder"
+        assert nested.is_dir()
+        assert (nested / "additional.dat").exists()
+
+    def test_calibrations_none_skipped_in_execute(self, tmp_path):
+        """Passing None for calibrations_dir skips the copy gracefully."""
+        patient_dir = _make_xvi_session(
+            tmp_path, "img_001",
+            scan_uid="1.3.46.423632.12345.2023-03-21100000000",
+        )
+        out = tmp_path / "out"
+        mapper = LearnFolderMapper(patient_dir, "PAT01", "Prostate", out)
+
+        with patch("learn_upload.folder_sort.extract_ini_from_rps", return_value=None):
+            summary = mapper.execute(calibrations_dir=None, dry_run=True)
+
+        assert "calibrations" not in summary["files_copied"]
