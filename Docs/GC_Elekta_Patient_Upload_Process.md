@@ -2,36 +2,49 @@
 
 ## Purpose of document
 
-This document serves as the SOP for patient data transfer to LEARN from PRIME datastore and from the Elekta_fdt datastore. This is to be used in conjunction with the USYD transfer WIs which addresses connectivity and folder structure in more detail.
+This document serves as the SOP for patient data transfer to LEARN from PRIME datastore and from the Elekta_fdt datastore. This is to be used in conjunction with the USYD transfer WIs which address patient registration in RedCAP, connectivity and folder structure in more detail.
 
-Before registering the patient we need to check if dataset has the following:
-
-1. Height/weight information in MQ assessments (Vital Signs) during the treatment period. This requirement might be revisited at a subsequent revision.
-2. Projections with target within the 180 degree frames.
-3. RPS.dcm with registration and shift values available in XVIclinical folder and MQ
-
-## PRIME Data Transfer
+## For PRIME Data Transfer
 
 The Site Physicist of each PRIME site will move PRIME related data to [PRIME Data Store](https://genesiscare.sharepoint.com/:f:/r/sites/PRIME/Shared%20Documents/PRIME%20Data%20Store?csf=1&web=1&e=mhtCbJ).
 
-The PRIME trial physicist will be responsible for the rest of the process below. Only the sessions with SFOV CBCTs need to be transferred to the LEARN data base. Ignore sessions with MFOV CBCTs.
+What needs to be in PRIME datastore patient folder
+- XVI file export
+- XVI Calibration files at the time of fraction. If calibration occured mid treatment then all copies of calibration files.
+- Monaco export patient.
+- KIM Trajectory Logs
+- KIM Centroid File
+
+The PRIME TCP/ImageX-RA will be responsible for the rest of the process below. Only the sessions with SFOV CBCTs need to be transferred to the LEARN data base. Ignore sessions with MFOV CBCTs.
 
 <**to be expanded**/copy from PRIME workflow doc>
 
-## Elekta_fdt Data Transfer
+## For Elekta_fdt Data Transfer
 
-Open up the [Patient Data Log.xlsx](https://genesiscare.sharepoint.com/:x:/r/sites/LEARN/Shared%20Documents/General%20Channel/Patient%20Data%20Log.xlsx?d=w2ebf6abe06d542cb9e87b3c40fd1beea&csf=1&web=1&e=XmStjS) in LEARN Teams. This is a list of patients in the Elekta_FDT folder. Go to the patient folder in elekta_fdt that is currently being processed and select an unprocessed patient on the worksheet.
+### Overall Steps
+1. Check if minimum data requirements for patient registration and imaging data are met.
+2. Register patient in redcap and uploade consent form.
+3. Update the [patient log](https://genesiscare.sharepoint.com/:x:/r/sites/LEARN/Shared%20Documents/General%20Channel/LEARN_Documents/Patient%20Data%20Log.xlsx?d=w2ebf6abe06d542cb9e87b3c40fd1beea&csf=1&web=1&e=LkARhv).
+4. Sort and anonimise using the [learn-crawler](https://github.com/kkaan/learn-crawler/tree/master/learn_upload).
 
-elekta_fdt folder name contains the MRN. Open patient in Mosaiq.
+Before registering the patient in redcap check if patient data meets the minimum requirement:
+
+1. Height/weight information in MQ assessments (Vital Signs) during the treatment period. This requirement might be revisited at a subsequent revision.
+2. Projections with target within the 180 degree frames using the [patient selection utility](https://github.com/Image-X-Institute/contour-alignment-tool).
+3. RPS.dcm with registration and shift values available in XVIclinical folder and MQ
+
+Open up the [Patient Data Log.xlsx](https://genesiscare.sharepoint.com/:x:/r/sites/LEARN/Shared%20Documents/General%20Channel/Patient%20Data%20Log.xlsx?d=w2ebf6abe06d542cb9e87b3c40fd1beea&csf=1&web=1&e=XmStjS) in LEARN Teams. This is a list of patients in the Elekta_FDT folder. Go to the site folder in elekta_fdt and select an unprocessed patient on the worksheet.
+
+elekta_fdt folder name contains the MRN. Open patient in Mosaiq. Check if vitals has age and height details.
+
+Check if there are registration shifts have been uploaded as required into MQ.
 
 Scan UID of the CBCT has date and time embedded in it. One place to get it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction
 
 Date and time of CBCT:
 ScanUID=1.3.46.423632.33783920233217242713.224.2023-03-21165402768
 
-Open patient in Mosaiq and find out what the treatment was, check if there are registration shifts have been uploaded as required into MQ. If there are shifts then go to the patient plan in Monaco.
-
-In the folder structure of export from XVI this scan UID it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction
+Scan UID it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction
 
 ![XVI Reconstruction folder showing INI file contents with ScanUID and date/time](images/GC_Elekta_Patient_Upload_Process/01_xvi_reconstruction_ini.png)
 
@@ -52,15 +65,11 @@ To assess whether the PTV is within the target,
 
 ## Patient Details and shifts from Mosaiq Images List
 
-Open the excel template for Treatment Notes
+The required patient details will be generated by [`report_patient_details.py`](../cbct-shifts/report_patient_details.py)
 
-kV and mA per frame can be obtained from the .ini in the reconstruction folder. mAs ??
+> **Warning:** The generated report has not been independently verified. Always cross-check the reported shift values against the values recorded in Mosaiq before use.
 
-TubeMA=10.0000 TubeKV=100.0000
-
-Coordinate system will be "Patient Coordinate System (Beam)". See Appendix to check if beam or anatomy.
-
-The image list SRO browser can be used to fill the shift in patient coordinates.
+The image list SRO browser can also be used to validate and fill in CBCT shifts in patient coordinates.
 
 ![Mosaiq Images toolbar icon](images/GC_Elekta_Patient_Upload_Process/04_mosaiq_images_icon.png)
 
@@ -69,6 +78,9 @@ The registration results applied and shifted to and from that fraction's CBCT is
 ![Mosaiq SRO shift values in patient coordinates](images/GC_Elekta_Patient_Upload_Process/05_mosaiq_sro_shifts.png)
 
 ![Mosaiq SRO detailed registration view](images/GC_Elekta_Patient_Upload_Process/06_mosaiq_sro_detailed.png)
+
+Note for GC the coordinate system setting in MQ is globally set to "Patient Coordinate System (Beam)". See [Appendix](#appendix) to check if it's set to 'beam' or 'anatomy' for your institution.
+
 
 ## Anonymisation and Folder Sorting
 
