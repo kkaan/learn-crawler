@@ -8,7 +8,8 @@ This document serves as the SOP for patient data transfer to LEARN from PRIME da
 
 The Site Physicist of each PRIME site will move PRIME related data to [PRIME Data Store](https://genesiscare.sharepoint.com/:f:/r/sites/PRIME/Shared%20Documents/PRIME%20Data%20Store?csf=1&web=1&e=mhtCbJ).
 
-What needs to be in PRIME datastore patient folder
+What needs to be in PRIME datastore patient folder:
+
 - XVI file export
 - XVI Calibration files at the time of fraction. If calibration occured mid treatment then all copies of calibration files.
 - Monaco export patient.
@@ -22,6 +23,7 @@ The PRIME TCP/ImageX-RA will be responsible for the rest of the process below. O
 ## For Elekta_fdt Data Transfer
 
 ### Overall Steps
+
 1. Check if minimum data requirements for patient registration and imaging data are met.
 2. Register patient in redcap and uploade consent form.
 3. Update the [patient log](https://genesiscare.sharepoint.com/:x:/r/sites/LEARN/Shared%20Documents/General%20Channel/LEARN_Documents/Patient%20Data%20Log.xlsx?d=w2ebf6abe06d542cb9e87b3c40fd1beea&csf=1&web=1&e=LkARhv).
@@ -35,41 +37,40 @@ Before registering the patient in redcap check if patient data meets the minimum
 
 Open up the [Patient Data Log.xlsx](https://genesiscare.sharepoint.com/:x:/r/sites/LEARN/Shared%20Documents/General%20Channel/Patient%20Data%20Log.xlsx?d=w2ebf6abe06d542cb9e87b3c40fd1beea&csf=1&web=1&e=XmStjS) in LEARN Teams. This is a list of patients in the Elekta_FDT folder. Go to the site folder in elekta_fdt and select an unprocessed patient on the worksheet.
 
-elekta_fdt folder name contains the MRN. Open patient in Mosaiq. Check if vitals has age and height details.
-
+elekta_fdt folder name contains the MRN. Open patient in Mosaiq.
+Check if vitals has age and height details.
 Check if there are registration shifts have been uploaded as required into MQ.
 
-Scan UID of the CBCT has date and time embedded in it. One place to get it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction
-
+Scan UID of the CBCT has date and time embedded in it if you need to cross-reference to ensure correct plan is exported from Monaco:
+One place to get it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction.
 Date and time of CBCT:
 ScanUID=1.3.46.423632.33783920233217242713.224.2023-03-21165402768
 
-Scan UID it is in one of the .ini files in IMAGES\img_1.3.46.423632.337839202332931827841.8\Reconstruction
-
 ![XVI Reconstruction folder showing INI file contents with ScanUID and date/time](images/GC_Elekta_Patient_Upload_Process/01_xvi_reconstruction_ini.png)
 
-Open patient in Monaco. If not in the default location, retrieve from archive (ensuring the usual precautions for retrieval is followed so it doesn't overwrite any data). Open the correct plan (using the date and reference meta-data of first fraction CBCT) and open 3D view with PTV visible.
+Open patient in Monaco. If not in the default location, retrieve from archive (ensuring the usual precautions for retrieval is followed so it doesn't overwrite any data). Open the correct plan (using the date and reference meta-data of first fraction CBCT). Export to a staging folder in the local drive where you have copied the XVI data.
 
 ## Target in projections check
 
 Open **Contour Alignment Tool** from imageX and follow instructions in [https://github.com/Image-X-Institute/contour-alignment-tool.git](https://github.com/Image-X-Institute/contour-alignment-tool.git) to get to view the contour overlayed on projections. Use 3D view in Monaco to verify and adjust contour location against the projections.
 
-![Contour Alignment Tool showing PTV overlay on projection](images/GC_Elekta_Patient_Upload_Process/02_contour_alignment_tool.png) ![X-ray projection with PTV contour overlay on spine](images/GC_Elekta_Patient_Upload_Process/03_spine_ptv_projection.png)
+![Contour Alignment Tool showing PTV overlay on projection](images/GC_Elekta_Patient_Upload_Process/02_contour_alignment_tool.png)
+![X-ray projection with PTV contour overlay on spine](images/GC_Elekta_Patient_Upload_Process/03_spine_ptv_projection.png)
 
-All the data loads fine and goes green, gets to Data processing in progress, Loading the CT happens quickly. "Generate structure volume mask" takes a long time. Looks like it's stalled but it has not.
+NB: loading the CT happens quickly but the "Generate structure volume mask" takes a long time if on share drive. Looks like it's stalled but it has not. Wait...
 
-To assess whether the PTV is within the target,
+To assess whether the PTV is within the target when this utility fails to register the contour properly:
 
-1. Check image is SFOV (come back MFOV images if more patients are needed)
+1. Check image is SFOV (come back to MFOV images if more patients are needed)
 2. Open up patient in Monaco in 3D view and at the same time have the contour alignment tool open. Use both to guide where the PTV will be on the patient anatomy.
 
 ## Patient Details and shifts from Mosaiq Images List
 
-The required patient details will be generated by [`report_patient_details.py`](../cbct-shifts/report_patient_details.py)
+The required patient details report will be generated by [`report_patient_details.py`](../cbct-shifts/report_patient_details.py). This replaces the excel file template usage that is described below.
 
 > **Warning:** The generated report has not been independently verified. Always cross-check the reported shift values against the values recorded in Mosaiq before use.
 
-The image list SRO browser can also be used to validate and fill in CBCT shifts in patient coordinates.
+The image list SRO browser can also be used to validate and fill in CBCT shifts in patient coordinates. Use the excel template for this if needed. The required data in this is in the RPS file that will be exported along with the images.
 
 ![Mosaiq Images toolbar icon](images/GC_Elekta_Patient_Upload_Process/04_mosaiq_images_icon.png)
 
@@ -80,7 +81,6 @@ The registration results applied and shifted to and from that fraction's CBCT is
 ![Mosaiq SRO detailed registration view](images/GC_Elekta_Patient_Upload_Process/06_mosaiq_sro_detailed.png)
 
 Note for GC the coordinate system setting in MQ is globally set to "Patient Coordinate System (Beam)". See [Appendix](#appendix) to check if it's set to 'beam' or 'anatomy' for your institution.
-
 
 ## Anonymisation and Folder Sorting
 
@@ -94,6 +94,8 @@ The GUI wizard automates the following steps:
 4. **CBCT Shift Report** -- extracts couch shift values from RPS registration files
 
 See the [GUI Walkthrough](GUI_Walkthrough.md) for the full step-by-step guide.
+
+> **Alert:** The utility does not yet include the current calibration files with the transfer. A copy of the `Current Calibration` folder must be manually inserted into each fraction folder under Patient Images.
 
 ## Transfer
 
@@ -114,7 +116,7 @@ GC is only providing CBCTs at this stage so the reconstructed CBCTs, registratio
 **Images list column definitions.**
 
 | Parameter | Description |
-|-----------|-------------|
+| --------- | ----------- |
 | Sup | Displays the magnitude of the superior or inferior offset of the image in centimeters. |
 | Lat | Displays the magnitude of the left or right offset of the image in centimeters. |
 | Ant | Displays the magnitude of the anterior or posterior offset of the image in centimeters. |
@@ -123,7 +125,7 @@ GC is only providing CBCTs at this stage so the reconstructed CBCTs, registratio
 | Sag (B) | Displays the sagittal angular correction in degrees. |
 | Trans (B) | Displays the transverse angular correction in degrees. |
 
-**Setup Offset Reference**
+### Setup Offset Reference
 
 Select the offset reference to be used by Image Management. Setup corrections on images are described in patient coordinates (Ant/Post, Sup/Inf, R/L). You can select Beam or Anatomy to determine the direction in which to move the beam. These selections configure the MOSAIQ system to show setup corrections direction relative to beam parameters or patient anatomy shown in the image.
 
