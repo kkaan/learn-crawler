@@ -75,3 +75,107 @@ class TestFindPatientFolders:
     def test_missing_machine_returns_empty(self, tmp_path):
         from inventory_crawler import find_patient_folders
         assert find_patient_folders(tmp_path / "does_not_exist") == []
+
+
+# ---------------------------------------------------------------------------
+# Helpers for synthetic IMAGES/img_<UID>/ structures
+# ---------------------------------------------------------------------------
+
+def _make_img_dir(
+    patient_dir: Path,
+    img_uid: str,
+    treatment_id: str,
+    fov: str | None,
+    scan_uid: str | None = None,
+) -> Path:
+    """Create a synthetic IMAGES/img_<UID>/ folder with _Frames.xml + INI.XVI."""
+    img_dir = patient_dir / "IMAGES" / f"img_{img_uid}"
+    img_dir.mkdir(parents=True)
+
+    # _Frames.xml with Treatment/ID
+    frames = img_dir / "_Frames.xml"
+    frames.write_text(
+        f"""<?xml version="1.0"?>
+<Frames>
+  <Treatment><ID>{treatment_id}</ID></Treatment>
+  <Image>
+    <AcquisitionPresetName>SymmetricBody</AcquisitionPresetName>
+    <DicomUID>1.2.3.{img_uid}</DicomUID>
+    <kV>120</kV>
+    <mA>20</mA>
+  </Image>
+</Frames>
+""",
+        encoding="utf-8",
+    )
+
+    # Reconstruction/<UID>.INI.XVI with FOV
+    if fov is not None:
+        recon = img_dir / "Reconstruction"
+        recon.mkdir()
+        ini_lines = [f"FOV={fov}"]
+        if scan_uid:
+            ini_lines.append(f"ScanUID={scan_uid}")
+        (recon / f"{img_uid}.INI.XVI").write_text(
+            "\n".join(ini_lines) + "\n", encoding="utf-8",
+        )
+
+    return img_dir
+
+
+# ---------------------------------------------------------------------------
+# iter_img_records
+# ---------------------------------------------------------------------------
+
+class TestIterImgRecords:
+    def test_yields_one_record_per_img_dir(self, tmp_path):
+        from inventory_crawler import iter_img_records
+
+        patient = tmp_path / "patient_00001234"
+        patient.mkdir()
+        _make_img_dir(
+            patient, "abc1", "WholeBrain-C2Retrt", fov="small",
+            scan_uid="1.3.46.423632.1.1.224.2023-03-21165402768",
+        )
+        _make_img_dir(patient, "abc2", "Lung-LUL", fov="medium")
+
+        records = list(iter_img_records(patient))
+
+        assert len(records) == 2
+        by_uid = {r.img_uid: r for r in records}
+        assert by_uid["abc1"].treatment_id == "WholeBrain-C2Retrt"
+        assert by_uid["abc1"].fov == "small"
+        assert by_uid["abc1"].scan_datetime is not None
+        assert by_uid["abc2"].treatment_id == "Lung-LUL"
+        assert by_uid["abc2"].fov == "medium"
+        assert by_uid["abc2"].scan_datetime is None
+
+    def test_handles_missing_frames_xml(self, tmp_path):
+        from inventory_crawler import iter_img_records
+
+        patient = tmp_path / "patient_00001234"
+        img_dir = patient / "IMAGES" / "img_orphan"
+        img_dir.mkdir(parents=True)
+        # No _Frames.xml, no Reconstruction
+        records = list(iter_img_records(patient))
+        assert len(records) == 1
+        assert records[0].img_uid == "orphan"
+        assert records[0].treatment_id is None
+        assert records[0].fov is None
+
+    def test_handles_missing_ini_xvi(self, tmp_path):
+        from inventory_crawler import iter_img_records
+
+        patient = tmp_path / "patient_00001234"
+        _make_img_dir(patient, "no_recon", "Pelvis-Prostate", fov=None)
+
+        records = list(iter_img_records(patient))
+        assert len(records) == 1
+        assert records[0].treatment_id == "Pelvis-Prostate"
+        assert records[0].fov is None
+
+    def test_no_images_dir_returns_empty(self, tmp_path):
+        from inventory_crawler import iter_img_records
+        patient = tmp_path / "patient_99"
+        patient.mkdir()
+        assert list(iter_img_records(patient)) == []
