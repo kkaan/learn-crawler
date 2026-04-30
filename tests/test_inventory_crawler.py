@@ -401,3 +401,32 @@ class TestWriteInventoryCsv:
         assert out.exists()
         # Header-only file
         assert out.read_text(encoding="utf-8").strip().startswith("machine,patient_folder")
+
+
+# ---------------------------------------------------------------------------
+# main() CLI
+# ---------------------------------------------------------------------------
+
+class TestMain:
+    def test_end_to_end_with_synthetic_root(self, tmp_path, capsys):
+        """Run main() with --root and --output against a synthetic tree."""
+        from inventory_crawler import main
+
+        # Build a minimal world: one machine, one patient, one img
+        machine = _make_machine(tmp_path, "20230101_CenterA_M1", with_flexmap=True)
+        patient = machine / "patient_00001234"
+        patient.mkdir()
+        _make_img_dir(patient, "abc", "Brain-Whole", fov="small")
+
+        output = tmp_path / "out.csv"
+        rc = main([
+            "--root", str(tmp_path),
+            "--output", str(output),
+            "--log-level", "WARNING",
+        ])
+        assert rc == 0
+        assert output.exists()
+        content = output.read_text(encoding="utf-8")
+        assert "Brain-Whole" in content
+        assert "small" in content
+        assert "20230101_CenterA_M1" in content

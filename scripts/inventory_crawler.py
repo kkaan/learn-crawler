@@ -10,11 +10,12 @@ Usage:
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -24,6 +25,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from learn_upload.config import DEFAULT_XVI_BASE, setup_logging  # noqa: E402
 from learn_upload.utils import (  # noqa: E402  (import after sys.path tweak)
     extract_planned_fractions,
     parse_frames_xml,
@@ -288,3 +290,54 @@ def write_inventory_csv(records: list[ImgRecord], output_path: Path) -> None:
                 str(r.img_dir),
             ])
     logger.info("Wrote %d rows to %s", len(records), output_path)
+
+
+def _default_output_path() -> Path:
+    """``Data/inventory/inventory_<UTC-timestamp>.csv`` relative to repo root."""
+    repo_root = Path(__file__).resolve().parents[1]
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return repo_root / "Data" / "inventory" / f"inventory_{stamp}.csv"
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Trawl XVI processed root, emit one CSV row per CBCT img folder.",
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        # NOTE: DEFAULT_XVI_BASE points at one machine; for a multi-machine trawl
+        # pass --root E:\XVI_COLLECTION\processed explicitly. Default here is its
+        # parent so a bare invocation walks all machines under processed/.
+        default=DEFAULT_XVI_BASE.parent,
+        help="Root containing <Date_Center_Machine> subdirectories "
+             "(default: parent of DEFAULT_XVI_BASE)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="CSV output path (default: Data/inventory/inventory_<UTC-timestamp>.csv)",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level (default: INFO)",
+    )
+    args = parser.parse_args(argv)
+
+    setup_logging(level=getattr(logging, args.log_level))
+
+    output_path = args.output or _default_output_path()
+    logger.info("Trawling %s -> %s", args.root, output_path)
+
+    records = trawl_root(args.root)
+    write_inventory_csv(records, output_path)
+
+    print(f"Wrote {len(records)} rows to {output_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
