@@ -40,6 +40,7 @@ _INI_FIELDS = [
     "TubeKV",
     "TubeMA",
     "CollimatorName",
+    "FOV",
 ]
 
 

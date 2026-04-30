@@ -99,6 +99,20 @@ class TestParseXviIni:
         assert result["TubeKV"] == "100.0000"
         assert result["TubeMA"] == "10.0000"
 
+    def test_extracts_fov_small(self):
+        """parse_xvi_ini should return the FOV field from .INI.XVI text."""
+        ini_text = "ScanUID=1.2.3.4\nTubeKV=120\nFOV=small\nCollimatorName=S20\n"
+        result = parse_xvi_ini(ini_text)
+        assert result.get("FOV") == "small"
+
+    def test_extracts_fov_medium_and_large(self):
+        assert parse_xvi_ini("FOV=medium\n").get("FOV") == "medium"
+        assert parse_xvi_ini("FOV=large\n").get("FOV") == "large"
+
+    def test_missing_fov_returns_no_key(self):
+        result = parse_xvi_ini("ScanUID=1.2.3.4\n")
+        assert "FOV" not in result
+
 
 # ---------------------------------------------------------------------------
 # parse_scan_datetime
