@@ -91,6 +91,23 @@ def find_patient_folders(machine_dir: Path) -> list[Path]:
     )
 
 
+def _pick_recon_file(recon_dir: Path, img_uid: str, suffix: str) -> Optional[Path]:
+    """Choose the right Reconstruction/ file for an img_<UID> folder.
+
+    Prefers the exact ``<img_uid><suffix>`` filename (the bare-UID file the
+    user spec refers to). Falls back to the first sorted match for ``*<suffix>``
+    if the exact filename isn't present.
+
+    Note: ``glob("*.INI")`` does NOT match ``*.INI.XVI`` (the suffix differs),
+    so the two suffixes can be queried independently without crosstalk.
+    """
+    preferred = recon_dir / f"{img_uid}{suffix}"
+    if preferred.exists():
+        return preferred
+    candidates = sorted(recon_dir.glob(f"*{suffix}"))
+    return candidates[0] if candidates else None
+
+
 @dataclass
 class ImgRecord:
     """One inventory row corresponding to a single ``IMAGES/img_<UID>/`` folder."""
@@ -139,18 +156,28 @@ def iter_img_records(patient_dir: Path) -> Iterator[ImgRecord]:
         scan_dt: Optional[datetime] = None
         recon_dir = img_dir / "Reconstruction"
         if recon_dir.is_dir():
-            ini_xvi_files = sorted(recon_dir.glob("*.INI.XVI"))
-            if ini_xvi_files:
-                ini_text = ini_xvi_files[0].read_text(
-                    encoding="utf-8", errors="ignore",
+            # FOV: <img_uid>.INI.XVI is authoritative (per user spec). The
+            # Reconstruction folder also contains <img_uid>.<datetime>.INI.XVI
+            # which omits FOV (it stores reconstruction params only). Picking
+            # the bare-UID file by exact name avoids the alphabetical-sort trap
+            # where the timestamped sibling sorts first ('2' < 'I' in ASCII).
+            target_xvi = _pick_recon_file(recon_dir, img_uid, suffix=".INI.XVI")
+            if target_xvi is not None:
+                ini_data = parse_xvi_ini(
+                    target_xvi.read_text(encoding="utf-8", errors="ignore")
                 )
-                ini_data = parse_xvi_ini(ini_text)
                 fov = ini_data.get("FOV")
+
+            # ScanUID lives in the plain <img_uid>.INI file (not .INI.XVI),
+            # consistent with the convention in learn_upload/folder_sort.py:219.
+            target_ini = _pick_recon_file(recon_dir, img_uid, suffix=".INI")
+            if target_ini is not None:
+                ini_data = parse_xvi_ini(
+                    target_ini.read_text(encoding="utf-8", errors="ignore")
+                )
                 scan_uid = ini_data.get("ScanUID")
                 if scan_uid:
                     scan_dt = parse_scan_datetime(scan_uid)
-            else:
-                logger.info("No *.INI.XVI in %s", recon_dir)
 
         yield ImgRecord(
             machine=patient_dir.parent.name,
