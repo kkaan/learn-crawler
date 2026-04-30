@@ -342,3 +342,62 @@ class TestTrawlRoot:
     def test_empty_root_returns_empty(self, tmp_path):
         from inventory_crawler import trawl_root
         assert trawl_root(tmp_path) == []
+
+
+# ---------------------------------------------------------------------------
+# write_inventory_csv
+# ---------------------------------------------------------------------------
+
+class TestWriteInventoryCsv:
+    def test_writes_headers_and_rows(self, tmp_path):
+        import csv
+        from datetime import datetime
+        from inventory_crawler import write_inventory_csv, ImgRecord
+
+        records = [
+            ImgRecord(
+                machine="20230101_CenterA_M1",
+                patient_folder="patient_00001234",
+                img_uid="abc",
+                treatment_id="Brain-Whole",
+                fov="small",
+                scan_datetime=datetime(2023, 3, 21, 16, 54, 2),
+                planned_fractions=30,
+                img_dir=tmp_path / "fake",
+            ),
+            ImgRecord(
+                machine="20230101_CenterA_M1",
+                patient_folder="patient_00009999",
+                img_uid="def",
+                treatment_id=None,
+                fov=None,
+                scan_datetime=None,
+                planned_fractions=None,
+                img_dir=tmp_path / "fake2",
+            ),
+        ]
+        out = tmp_path / "out.csv"
+        write_inventory_csv(records, out)
+
+        rows = list(csv.DictReader(out.open(encoding="utf-8")))
+        assert len(rows) == 2
+        assert rows[0]["machine"] == "20230101_CenterA_M1"
+        assert rows[0]["patient_folder"] == "patient_00001234"
+        assert rows[0]["img_uid"] == "abc"
+        assert rows[0]["treatment_id"] == "Brain-Whole"
+        assert rows[0]["fov"] == "small"
+        assert rows[0]["planned_fractions"] == "30"
+        assert rows[0]["scan_datetime"] == "2023-03-21T16:54:02"
+        # Missing fields render as empty strings, not "None"
+        assert rows[1]["treatment_id"] == ""
+        assert rows[1]["fov"] == ""
+        assert rows[1]["planned_fractions"] == ""
+        assert rows[1]["scan_datetime"] == ""
+
+    def test_creates_parent_dir(self, tmp_path):
+        from inventory_crawler import write_inventory_csv
+        out = tmp_path / "nested" / "dirs" / "inv.csv"
+        write_inventory_csv([], out)
+        assert out.exists()
+        # Header-only file
+        assert out.read_text(encoding="utf-8").strip().startswith("machine,patient_folder")

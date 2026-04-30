@@ -10,6 +10,7 @@ Usage:
 """
 from __future__ import annotations
 
+import csv
 import logging
 import sys
 from dataclasses import dataclass
@@ -251,3 +252,39 @@ def trawl_root(processed_root: Path) -> list[ImgRecord]:
         len(all_records), len(machines),
     )
     return all_records
+
+
+CSV_HEADERS = [
+    "machine",
+    "patient_folder",
+    "img_uid",
+    "treatment_id",
+    "fov",
+    "scan_datetime",
+    "planned_fractions",
+    "img_dir",
+]
+
+
+def write_inventory_csv(records: list[ImgRecord], output_path: Path) -> None:
+    """Write inventory records to CSV.
+
+    Empty/None fields are rendered as empty strings (not the literal "None").
+    Datetimes are rendered ISO 8601. Parent directories are created if needed.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(CSV_HEADERS)
+        for r in records:
+            writer.writerow([
+                r.machine,
+                r.patient_folder,
+                r.img_uid,
+                r.treatment_id or "",
+                r.fov or "",
+                r.scan_datetime.isoformat(timespec="seconds") if r.scan_datetime else "",
+                r.planned_fractions if r.planned_fractions is not None else "",
+                str(r.img_dir),
+            ])
+    logger.info("Wrote %d rows to %s", len(records), output_path)
