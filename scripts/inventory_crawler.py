@@ -210,3 +210,44 @@ def find_planned_fractions_for_patient(patient_dir: Path) -> Optional[int]:
 
     logger.info("No RTPLAN with NumberOfFractionsPlanned for %s", patient_dir.name)
     return None
+
+
+def trawl_machine(machine_dir: Path) -> list[ImgRecord]:
+    """Walk every patient and image under one machine; return all ImgRecords.
+
+    Each record's ``planned_fractions`` is filled in once per patient
+    (since fraction count is plan-level metadata).
+    """
+    records: list[ImgRecord] = []
+    patients = find_patient_folders(machine_dir)
+    for patient_dir in patients:
+        fractions = find_planned_fractions_for_patient(patient_dir)
+        for rec in iter_img_records(patient_dir):
+            rec.planned_fractions = fractions
+            records.append(rec)
+    logger.info(
+        "Trawled %s: %d image records across %d patients",
+        machine_dir.name, len(records), len(patients),
+    )
+    return records
+
+
+def trawl_root(processed_root: Path) -> list[ImgRecord]:
+    """Trawl every flexmap-equipped machine under ``processed_root``.
+
+    Machines lacking a flexmap calibration directory are logged and skipped
+    (they cannot contribute usable trial data).
+    """
+    machines = find_machines_with_flexmaps(processed_root)
+    if not machines:
+        logger.warning("No machines with flexmaps found under %s", processed_root)
+        return []
+
+    all_records: list[ImgRecord] = []
+    for machine_dir in machines:
+        all_records.extend(trawl_machine(machine_dir))
+    logger.info(
+        "Trawl complete: %d total image records across %d machines",
+        len(all_records), len(machines),
+    )
+    return all_records

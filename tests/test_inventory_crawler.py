@@ -270,3 +270,75 @@ class TestFindPlannedFractionsForPatient:
         _write_rtplan(elsewhere / "plan.dcm", num_fractions=15)
 
         assert find_planned_fractions_for_patient(patient) == 15
+
+
+# ---------------------------------------------------------------------------
+# trawl_machine, trawl_root
+# ---------------------------------------------------------------------------
+
+class TestTrawlMachine:
+    def test_combines_patient_and_image_data(self, tmp_path):
+        from inventory_crawler import trawl_machine
+
+        machine = tmp_path / "20230101_CenterA_M1"
+        flex = machine / "Current Calibration Files" / "Current" / "FlexMap"
+        flex.mkdir(parents=True)
+        (flex / "x.flexmap").write_bytes(b"")
+
+        patient = machine / "patient_00001234"
+        patient.mkdir()
+        _make_img_dir(patient, "img1", "Brain-Whole", fov="small")
+        _make_img_dir(patient, "img2", "Brain-Whole", fov="medium")
+
+        # No DICOM_PLAN -> planned_fractions=None
+        records = trawl_machine(machine)
+
+        assert len(records) == 2
+        assert all(r.machine == "20230101_CenterA_M1" for r in records)
+        assert all(r.patient_folder == "patient_00001234" for r in records)
+        assert all(r.planned_fractions is None for r in records)
+        fovs = sorted(r.fov for r in records)
+        assert fovs == ["medium", "small"]
+
+    def test_fills_planned_fractions_per_patient(self, tmp_path):
+        """Each patient's RTPLAN fraction count should propagate to all their images."""
+        from inventory_crawler import trawl_machine
+
+        machine = tmp_path / "20230101_CenterA_M1"
+        machine.mkdir()
+        patient = machine / "patient_00001234"
+        plan_dir = patient / "DICOM_PLAN"
+        plan_dir.mkdir(parents=True)
+        _write_rtplan(plan_dir / "plan.dcm", num_fractions=20)
+        _make_img_dir(patient, "f1", "Lung-RUL", fov="small")
+        _make_img_dir(patient, "f2", "Lung-RUL", fov="small")
+
+        records = trawl_machine(machine)
+        assert len(records) == 2
+        assert all(r.planned_fractions == 20 for r in records)
+
+
+class TestTrawlRoot:
+    def test_skips_machines_without_flexmaps(self, tmp_path):
+        from inventory_crawler import trawl_root
+
+        # Machine A has flexmap and one patient/img
+        a = _make_machine(tmp_path, "20230101_CenterA_M1", with_flexmap=True)
+        a_pat = a / "patient_00001"
+        a_pat.mkdir()
+        _make_img_dir(a_pat, "abc", "Lung-RUL", fov="small")
+
+        # Machine B has NO flexmap but has data — must be skipped entirely
+        b = _make_machine(tmp_path, "20230101_CenterB_M2", with_flexmap=False)
+        b_pat = b / "patient_99999"
+        b_pat.mkdir()
+        _make_img_dir(b_pat, "xyz", "Lung-LUL", fov="small")
+
+        records = trawl_root(tmp_path)
+        assert len(records) == 1
+        assert records[0].machine == "20230101_CenterA_M1"
+        assert records[0].treatment_id == "Lung-RUL"
+
+    def test_empty_root_returns_empty(self, tmp_path):
+        from inventory_crawler import trawl_root
+        assert trawl_root(tmp_path) == []
