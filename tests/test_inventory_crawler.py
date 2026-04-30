@@ -50,3 +50,28 @@ class TestFindMachinesWithFlexmaps:
     def test_missing_root_returns_empty(self, tmp_path):
         from inventory_crawler import find_machines_with_flexmaps
         assert find_machines_with_flexmaps(tmp_path / "does_not_exist") == []
+
+
+# ---------------------------------------------------------------------------
+# find_patient_folders
+# ---------------------------------------------------------------------------
+
+class TestFindPatientFolders:
+    def test_returns_only_patient_prefixed_dirs(self, tmp_path):
+        from inventory_crawler import find_patient_folders
+
+        machine = tmp_path / "20230101_CenterA_M1"
+        (machine / "patient_00001234").mkdir(parents=True)
+        (machine / "patient_00009999").mkdir()
+        (machine / "Current Calibration Files").mkdir()
+        (machine / "not_a_patient").mkdir()
+        (machine / "stray.txt").write_text("x")
+
+        result = find_patient_folders(machine)
+
+        names = sorted(p.name for p in result)
+        assert names == ["patient_00001234", "patient_00009999"]
+
+    def test_missing_machine_returns_empty(self, tmp_path):
+        from inventory_crawler import find_patient_folders
+        assert find_patient_folders(tmp_path / "does_not_exist") == []

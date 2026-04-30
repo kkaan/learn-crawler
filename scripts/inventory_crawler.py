@@ -55,3 +55,17 @@ def find_machines_with_flexmaps(processed_root: Path) -> list[Path]:
         logger.info("Machine %s has %d flexmap file(s)", entry.name, len(flexmaps))
         machines.append(entry)
     return machines
+
+
+def find_patient_folders(machine_dir: Path) -> list[Path]:
+    """Return ``patient_*`` subdirectories of a machine directory, sorted.
+
+    Mirrors the discovery convention used by ``scripts/elektafdt_crawler.py:69-94``.
+    """
+    if not machine_dir.is_dir():
+        logger.warning("Machine directory not found: %s", machine_dir)
+        return []
+    return sorted(
+        p for p in machine_dir.iterdir()
+        if p.is_dir() and p.name.startswith("patient_")
+    )
