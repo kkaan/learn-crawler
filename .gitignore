@@ -93,3 +93,4 @@ desktop.ini
 # Claude Code configuration
 CLAUDE.md
 .claude/
+.remember/
