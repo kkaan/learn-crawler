@@ -24,6 +24,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from learn_upload.utils import (  # noqa: E402  (import after sys.path tweak)
+    extract_planned_fractions,
     parse_frames_xml,
     parse_scan_datetime,
     parse_xvi_ini,
@@ -158,3 +159,54 @@ def iter_img_records(patient_dir: Path) -> Iterator[ImgRecord]:
             planned_fractions=None,
             img_dir=img_dir,
         )
+
+
+def _is_rtplan(dcm_path: Path) -> bool:
+    """Cheaply check whether a .dcm file has Modality == 'RTPLAN'.
+
+    Uses ``pydicom.dcmread(..., specific_tags=["Modality"])`` so we only read
+    the Modality tag — important when sweeping hundreds of DICOM files.
+    """
+    try:
+        import pydicom
+        ds = pydicom.dcmread(
+            str(dcm_path), stop_before_pixels=True, specific_tags=["Modality"],
+        )
+        return getattr(ds, "Modality", "").upper() == "RTPLAN"
+    except Exception:
+        return False
+
+
+def find_planned_fractions_for_patient(patient_dir: Path) -> Optional[int]:
+    """Search a patient directory for an RTPLAN DICOM and return its fraction count.
+
+    Order of search:
+      1. ``patient_dir/DICOM_PLAN/**/*.dcm`` — preferred location.
+      2. Recursive ``patient_dir/**/*.dcm`` fallback (if no RTPLAN was found
+         in DICOM_PLAN, e.g. only RTSTRUCT was present there).
+
+    Files are filtered by DICOM ``Modality == "RTPLAN"`` (per the convention
+    in ``learn_upload/folder_sort.py`` ``_MODALITY_MAP``). Returns the first
+    fraction count found, or ``None`` if no usable RTPLAN exists.
+    """
+    if not patient_dir.is_dir():
+        return None
+
+    # Preferred: DICOM_PLAN/
+    plan_dir = patient_dir / "DICOM_PLAN"
+    rtplans_in_plan_dir: list[Path] = []
+    if plan_dir.is_dir():
+        rtplans_in_plan_dir = [p for p in sorted(plan_dir.rglob("*.dcm")) if _is_rtplan(p)]
+
+    candidates = rtplans_in_plan_dir
+    if not candidates:
+        # Fallback: anywhere under patient_dir
+        candidates = [p for p in sorted(patient_dir.rglob("*.dcm")) if _is_rtplan(p)]
+
+    for dcm in candidates:
+        n = extract_planned_fractions(dcm)
+        if n is not None:
+            return n
+
+    logger.info("No RTPLAN with NumberOfFractionsPlanned for %s", patient_dir.name)
+    return None

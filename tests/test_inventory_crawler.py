@@ -2,10 +2,50 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 # Make scripts/ importable for tests
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
+
+
+def _write_rtplan(path: Path, num_fractions: int | None) -> None:
+    """Build a minimal RTPLAN DICOM. ``num_fractions=None`` skips the sequence."""
+    pytest.importorskip("pydicom")
+    from pydicom.dataset import Dataset, FileDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    file_meta = Dataset()
+    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.481.5"
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+    ds.Modality = "RTPLAN"
+    if num_fractions is not None:
+        fg = Dataset()
+        fg.NumberOfFractionsPlanned = num_fractions
+        ds.FractionGroupSequence = [fg]
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.save_as(str(path))
+
+
+def _write_other_modality(path: Path, modality: str) -> None:
+    """Build a minimal non-RTPLAN DICOM (used to verify Modality filtering)."""
+    pytest.importorskip("pydicom")
+    from pydicom.dataset import Dataset, FileDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    file_meta = Dataset()
+    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.481.3"
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+    ds.Modality = modality
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.save_as(str(path))
 
 
 def _make_machine(root: Path, name: str, with_flexmap: bool) -> Path:
@@ -179,3 +219,54 @@ class TestIterImgRecords:
         patient = tmp_path / "patient_99"
         patient.mkdir()
         assert list(iter_img_records(patient)) == []
+
+
+# ---------------------------------------------------------------------------
+# find_planned_fractions_for_patient
+# ---------------------------------------------------------------------------
+
+class TestFindPlannedFractionsForPatient:
+    def test_reads_dicom_plan_dir(self, tmp_path):
+        from inventory_crawler import find_planned_fractions_for_patient
+
+        patient = tmp_path / "patient_00001234"
+        plan_dir = patient / "DICOM_PLAN"
+        plan_dir.mkdir(parents=True)
+
+        _write_rtplan(plan_dir / "RP.001.dcm", num_fractions=30)
+        # Add a non-RTPLAN file to ensure the function filters by Modality
+        _write_other_modality(plan_dir / "RS.dcm", modality="RTSTRUCT")
+
+        assert find_planned_fractions_for_patient(patient) == 30
+
+    def test_no_dicom_returns_none(self, tmp_path):
+        from inventory_crawler import find_planned_fractions_for_patient
+        patient = tmp_path / "patient_00001234"
+        patient.mkdir()
+        assert find_planned_fractions_for_patient(patient) is None
+
+    def test_falls_back_to_recursive_search(self, tmp_path):
+        """If DICOM_PLAN doesn't contain an RTPLAN, search elsewhere under patient."""
+        from inventory_crawler import find_planned_fractions_for_patient
+
+        patient = tmp_path / "patient_00001234"
+        odd_dir = patient / "MISC" / "PLANS"
+        odd_dir.mkdir(parents=True)
+        _write_rtplan(odd_dir / "weird_name.dcm", num_fractions=5)
+
+        assert find_planned_fractions_for_patient(patient) == 5
+
+    def test_dicom_plan_dir_with_only_non_rtplan_falls_back(self, tmp_path):
+        """DICOM_PLAN exists but holds only RTSTRUCT — fallback should find RTPLAN elsewhere."""
+        from inventory_crawler import find_planned_fractions_for_patient
+
+        patient = tmp_path / "patient_99"
+        plan_dir = patient / "DICOM_PLAN"
+        plan_dir.mkdir(parents=True)
+        _write_other_modality(plan_dir / "RS.dcm", modality="RTSTRUCT")
+
+        elsewhere = patient / "elsewhere"
+        elsewhere.mkdir()
+        _write_rtplan(elsewhere / "plan.dcm", num_fractions=15)
+
+        assert find_planned_fractions_for_patient(patient) == 15
