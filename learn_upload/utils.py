@@ -275,3 +275,55 @@ def extract_ini_from_rps(dcm_path: Path) -> Optional[str]:
     except zipfile.BadZipFile:
         logger.error("Invalid ZIP data in %s", dcm_path)
         return None
+
+
+# ---------------------------------------------------------------------------
+# RTPLAN fraction count
+# ---------------------------------------------------------------------------
+
+def extract_planned_fractions(rtplan_path: Path) -> Optional[int]:
+    """Read an RTPLAN DICOM file and return ``NumberOfFractionsPlanned``.
+
+    Reads ``(300A,0070) FractionGroupSequence`` and returns the
+    ``(300A,0078) NumberOfFractionsPlanned`` value from its first item.
+    Returns ``None`` (with a warning logged) if the file cannot be read,
+    is not an RTPLAN, or lacks the expected sequence.
+
+    Parameters
+    ----------
+    rtplan_path : Path
+        Path to a DICOM RTPLAN file (Modality == ``"RTPLAN"``).
+
+    Returns
+    -------
+    int or None
+        Number of fractions planned, or None if unavailable.
+    """
+    try:
+        import pydicom
+    except ImportError:
+        logger.error("pydicom is required for extract_planned_fractions but not installed")
+        return None
+
+    try:
+        ds = pydicom.dcmread(str(rtplan_path), stop_before_pixels=True)
+    except Exception as exc:
+        logger.warning("Could not read RTPLAN %s: %s", rtplan_path, exc)
+        return None
+
+    fg_seq = getattr(ds, "FractionGroupSequence", None)
+    if not fg_seq:
+        logger.info("No FractionGroupSequence in %s", rtplan_path)
+        return None
+
+    first_group = fg_seq[0]
+    n = getattr(first_group, "NumberOfFractionsPlanned", None)
+    if n is None:
+        logger.info("No NumberOfFractionsPlanned in %s", rtplan_path)
+        return None
+
+    try:
+        return int(n)
+    except (TypeError, ValueError):
+        logger.warning("Non-integer NumberOfFractionsPlanned in %s: %r", rtplan_path, n)
+        return None
