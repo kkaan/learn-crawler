@@ -2,6 +2,9 @@
 
 import textwrap
 from datetime import datetime
+from pathlib import Path
+
+import pytest
 
 from learn_upload.utils import (
     parse_couch_shifts,
@@ -9,6 +12,32 @@ from learn_upload.utils import (
     parse_scan_datetime,
     parse_xvi_ini,
 )
+
+
+def _make_rtplan_with_fractions(path: Path, num_fractions: int) -> None:
+    """Write a minimal RTPLAN DICOM file with NumberOfFractionsPlanned set."""
+    pytest.importorskip("pydicom")
+    from pydicom.dataset import Dataset, FileDataset
+    from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+    file_meta = Dataset()
+    file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.481.5"  # RT Plan Storage
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+    ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+    ds.Modality = "RTPLAN"
+    ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+    ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+
+    fg = Dataset()
+    fg.FractionGroupNumber = 1
+    fg.NumberOfFractionsPlanned = num_fractions
+    ds.FractionGroupSequence = [fg]
+
+    ds.is_little_endian = True
+    ds.is_implicit_VR = False
+    ds.save_as(str(path))
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -98,6 +127,20 @@ class TestParseXviIni:
         result = parse_xvi_ini(ini)
         assert result["TubeKV"] == "100.0000"
         assert result["TubeMA"] == "10.0000"
+
+    def test_extracts_fov_small(self):
+        """parse_xvi_ini should return the FOV field from .INI.XVI text."""
+        ini_text = "ScanUID=1.2.3.4\nTubeKV=120\nFOV=small\nCollimatorName=S20\n"
+        result = parse_xvi_ini(ini_text)
+        assert result.get("FOV") == "small"
+
+    def test_extracts_fov_medium_and_large(self):
+        assert parse_xvi_ini("FOV=medium\n").get("FOV") == "medium"
+        assert parse_xvi_ini("FOV=large\n").get("FOV") == "large"
+
+    def test_missing_fov_returns_no_key(self):
+        result = parse_xvi_ini("ScanUID=1.2.3.4\n")
+        assert "FOV" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +258,42 @@ class TestParseCouchShifts:
             "longitudinal": 0.0,
             "vertical": 0.0,
         }
+
+
+# ---------------------------------------------------------------------------
+# extract_planned_fractions
+# ---------------------------------------------------------------------------
+
+class TestExtractPlannedFractions:
+    def test_returns_integer_for_valid_rtplan(self, tmp_path):
+        from learn_upload.utils import extract_planned_fractions
+        rtplan = tmp_path / "plan.dcm"
+        _make_rtplan_with_fractions(rtplan, num_fractions=25)
+        assert extract_planned_fractions(rtplan) == 25
+
+    def test_missing_sequence_returns_none(self, tmp_path):
+        """RTPLAN with no FractionGroupSequence should return None, not raise."""
+        pytest.importorskip("pydicom")
+        from pydicom.dataset import Dataset, FileDataset
+        from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+
+        from learn_upload.utils import extract_planned_fractions
+
+        path = tmp_path / "noseq.dcm"
+        file_meta = Dataset()
+        file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.481.5"
+        file_meta.MediaStorageSOPInstanceUID = generate_uid()
+        file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        ds = FileDataset(str(path), {}, file_meta=file_meta, preamble=b"\0" * 128)
+        ds.Modality = "RTPLAN"
+        ds.is_little_endian = True
+        ds.is_implicit_VR = False
+        ds.save_as(str(path))
+
+        assert extract_planned_fractions(path) is None
+
+    def test_unreadable_file_returns_none(self, tmp_path):
+        from learn_upload.utils import extract_planned_fractions
+        bogus = tmp_path / "not_a_dicom.dcm"
+        bogus.write_bytes(b"this is not DICOM")
+        assert extract_planned_fractions(bogus) is None
